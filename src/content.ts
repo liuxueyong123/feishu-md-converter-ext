@@ -18,6 +18,7 @@ import { repairTableHeader } from "./lark/table-repair";
 import { createRepairPanel, type RepairPanel } from "./ui/panel";
 
 const ROOT_ID = "lark-markdown-repair-root";
+const ROOT_SCHEMA_VERSION = "2";
 
 const COPY = {
   en: {
@@ -113,8 +114,12 @@ async function ensureEditor(copy: Copy): Promise<{
 function startExtension(): void {
   const existingRoot = document.getElementById(ROOT_ID);
   if (existingRoot) {
-    existingRoot.dispatchEvent(new CustomEvent("lark-markdown-repair:open"));
-    return;
+    if (existingRoot.dataset.schemaVersion !== ROOT_SCHEMA_VERSION) {
+      existingRoot.remove();
+    } else {
+      existingRoot.dispatchEvent(new CustomEvent("lark-markdown-repair:open"));
+      return;
+    }
   }
 
   const copy = COPY[
@@ -122,6 +127,7 @@ function startExtension(): void {
   ];
   const root = document.createElement("div");
   root.id = ROOT_ID;
+  root.dataset.schemaVersion = ROOT_SCHEMA_VERSION;
   root.setAttribute("data-extension-version", chrome.runtime.getManifest().version);
   document.documentElement.append(root);
 

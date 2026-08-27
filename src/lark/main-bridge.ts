@@ -1,5 +1,5 @@
-const REQUEST_EVENT = "lark-markdown-repair:main-request";
-const RESPONSE_EVENT = "lark-markdown-repair:main-response";
+const REQUEST_EVENT = "lark-markdown-repair:main-request:v2";
+const RESPONSE_EVENT = "lark-markdown-repair:main-response:v2";
 
 interface BridgeResponse<T> {
   error?: string;
@@ -30,7 +30,7 @@ export function callMainWorld<T>(
   return new Promise<T>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error("等待 Lark 编辑器响应超时"));
+      reject(new Error(`${command}：等待 Lark 编辑器响应超时`));
     }, timeoutMs);
 
     const cleanup = (): void => {

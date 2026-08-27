@@ -6,9 +6,9 @@ import {
 import { createBoldTextEdit } from "./lark/text-format";
 import { readCodeRecordSource } from "./lark/record-text";
 
-const REQUEST_EVENT = "lark-markdown-repair:main-request";
-const RESPONSE_EVENT = "lark-markdown-repair:main-response";
-const INSTALL_FLAG = "__larkMarkdownRepairMainWorldInstalled";
+const REQUEST_EVENT = "lark-markdown-repair:main-request:v2";
+const RESPONSE_EVENT = "lark-markdown-repair:main-response:v2";
+const INSTALL_FLAG = "__larkMarkdownRepairMainWorldInstalledV2";
 const MAX_BATCH_SIZE = 100;
 
 interface ReactFiberLike {
@@ -93,7 +93,7 @@ interface BridgeResponse {
 
 declare global {
   interface Window {
-    __larkMarkdownRepairMainWorldInstalled?: boolean;
+    __larkMarkdownRepairMainWorldInstalledV2?: boolean;
   }
 }
 
