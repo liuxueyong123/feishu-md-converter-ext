@@ -7,6 +7,12 @@ interface CandidateBase {
   scrollTop: number;
 }
 
+export interface CodeBlockReference {
+  blockId: string | null;
+  recordId: string;
+  scrollTop: number;
+}
+
 export interface TableCandidate extends CandidateBase {
   headerPreview: string;
   kind: "table";
@@ -95,30 +101,48 @@ function readCodeSource(block: Element): string {
   );
 }
 
-function readMermaidCandidate(
-  block: Element,
-  scrollTop: number,
+export function createMermaidCandidate(
+  reference: CodeBlockReference,
+  source: string,
 ): MermaidCandidate | null {
-  const identity = readStableBlockIdentity(block);
-  if (!identity) {
-    return null;
-  }
-
-  const detection = detectMermaidSource(readCodeSource(block));
+  const detection = detectMermaidSource(source);
   if (!detection.isMermaid || !detection.signature) {
     return null;
   }
 
   const [firstLine = "Mermaid"] = detection.normalizedSource.split("\n");
   return {
-    ...identity,
-    id: `mermaid:${identity.recordId}`,
+    ...reference,
+    id: `mermaid:${reference.recordId}`,
     kind: "mermaid",
     preview: firstLine.slice(0, 120),
-    scrollTop,
     signature: detection.signature,
     source: detection.normalizedSource,
   };
+}
+
+function readMermaidCandidate(
+  block: Element,
+  scrollTop: number,
+): MermaidCandidate | null {
+  const identity = readStableBlockIdentity(block);
+  if (!identity) return null;
+  return createMermaidCandidate(
+    { ...identity, scrollTop },
+    readCodeSource(block),
+  );
+}
+
+export function scanLoadedCodeReferences(
+  root: ParentNode,
+  scrollTop: number,
+): CodeBlockReference[] {
+  return Array.from(
+    root.querySelectorAll('[data-block-type="code"][data-record-id]'),
+  ).flatMap((block) => {
+    const identity = readStableBlockIdentity(block);
+    return identity ? [{ ...identity, scrollTop }] : [];
+  });
 }
 
 export function scanLoadedCandidates(

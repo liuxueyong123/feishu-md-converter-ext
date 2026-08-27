@@ -23,6 +23,14 @@ interface FrameValidation {
   valid: boolean;
 }
 
+interface FrameWriteInjectionResult {
+  frameId: number;
+  result?: {
+    channel?: string;
+    written: boolean;
+  };
+}
+
 export interface DiagramRepairResult {
   failed: Array<{ candidate: MermaidCandidate; reason: string }>;
   succeeded: MermaidCandidate[];
@@ -124,9 +132,10 @@ async function collectFrameChannels(
 async function validateFrames(
   channels: string[],
   signal: AbortSignal | undefined,
+  timeoutMs = 5_000,
 ): Promise<Map<string, FrameValidation>> {
   const validations = new Map<string, FrameValidation>();
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && validations.size < channels.length) {
     throwIfCancelled(signal);
     const current = await sendRuntimeMessage<FrameValidation[]>({
@@ -143,6 +152,78 @@ async function validateFrames(
     }
   }
   return validations;
+}
+
+async function writeFrames(items: DiagramFrameItem[]): Promise<Set<string>> {
+  if (items.length === 0) return new Set();
+  const results = await sendRuntimeMessage<FrameWriteInjectionResult[]>({
+    items,
+    type: "write-diagram-frames",
+  });
+  return new Set(
+    results.flatMap(({ result }) =>
+      result?.written && result.channel ? [result.channel] : [],
+    ),
+  );
+}
+
+async function locateDiagramElement(
+  recordId: string,
+  scrollContainer: HTMLElement,
+  signal: AbortSignal | undefined,
+): Promise<HTMLElement | null> {
+  let element = document.querySelector<HTMLElement>(
+    `[data-record-id="${CSS.escape(recordId)}"]`,
+  );
+  if (!element) {
+    const maximumScrollTop = Math.max(
+      0,
+      scrollContainer.scrollHeight - scrollContainer.clientHeight,
+    );
+    const step = Math.max(320, scrollContainer.clientHeight);
+    for (let scrollTop = 0; scrollTop <= maximumScrollTop; scrollTop += step) {
+      throwIfCancelled(signal);
+      scrollContainer.scrollTop = Math.min(scrollTop, maximumScrollTop);
+      await wait(100);
+      element = document.querySelector<HTMLElement>(
+        `[data-record-id="${CSS.escape(recordId)}"]`,
+      );
+      if (element) break;
+    }
+  }
+  element?.scrollIntoView({ block: "center" });
+  return element;
+}
+
+async function writeAndValidateFocusedFrame(
+  created: CreatedDiagram,
+  source: string,
+  scrollContainer: HTMLElement,
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
+  const element = await locateDiagramElement(
+    created.diagramRecordId,
+    scrollContainer,
+    signal,
+  );
+  if (!element) return false;
+
+  const deadline = Date.now() + 6_000;
+  while (Date.now() < deadline) {
+    throwIfCancelled(signal);
+    const iframe = element.querySelector<HTMLIFrameElement>("iframe[channel]");
+    const channel = iframe?.getAttribute("channel");
+    if (channel) {
+      const written = await writeFrames([{ channel, source }]);
+      if (written.has(channel)) {
+        await wait(350);
+        const validations = await validateFrames([channel], signal, 700);
+        if (validations.has(channel)) return true;
+      }
+    }
+    await wait(300);
+  }
+  return false;
 }
 
 export async function repairDiagrams({
@@ -184,12 +265,43 @@ export async function repairDiagrams({
     }
     if (frameItems.length > 0) {
       onProgress?.("写入 Mermaid 源码", 0.72);
-      await sendRuntimeMessage({ items: frameItems, type: "write-diagram-frames" });
     }
+    const writtenChannels = await writeFrames(frameItems);
     const validations = await validateFrames(
-      frameItems.map(({ channel }) => channel),
+      Array.from(writtenChannels),
       signal,
+      1_500,
     );
+    const succeededSourceIds = new Set<string>();
+    for (const candidate of candidates) {
+      const item = createdBySource.get(candidate.recordId);
+      const channel = item && channels.get(item.diagramRecordId);
+      if (channel && validations.has(channel)) {
+        succeededSourceIds.add(candidate.recordId);
+      }
+    }
+
+    const unresolved = candidates.filter(
+      ({ recordId }) => !succeededSourceIds.has(recordId),
+    );
+    for (const [index, candidate] of unresolved.entries()) {
+      const item = createdBySource.get(candidate.recordId);
+      if (!item) continue;
+      onProgress?.(
+        "激活并校验文本绘图组件",
+        0.76 + ((index + 1) / unresolved.length) * 0.16,
+      );
+      if (
+        await writeAndValidateFocusedFrame(
+          item,
+          candidate.source,
+          scrollContainer,
+          signal,
+        )
+      ) {
+        succeededSourceIds.add(candidate.recordId);
+      }
+    }
 
     const succeeded: MermaidCandidate[] = [];
     const failed: Array<{ candidate: MermaidCandidate; reason: string }> = [];
@@ -199,7 +311,7 @@ export async function repairDiagrams({
     for (const candidate of candidates) {
       const item = createdBySource.get(candidate.recordId);
       const channel = item && channels.get(item.diagramRecordId);
-      if (item && channel && validations.has(channel)) {
+      if (item && succeededSourceIds.has(candidate.recordId)) {
         succeeded.push(candidate);
         sourcesToDelete.push(candidate.recordId);
       } else {

@@ -1,11 +1,22 @@
 import {
+  type CodeBlockReference,
   type RepairCandidate,
+  createMermaidCandidate,
   scanLoadedCandidates,
+  scanLoadedCodeReferences,
 } from "./candidates";
+
+export interface CodeRecordSource {
+  recordId: string;
+  source: string;
+}
 
 interface ScanEntireDocumentOptions {
   editorRoot: ParentNode;
   onProgress?: (progress: number) => void;
+  resolveCodeSources?: (
+    recordIds: string[],
+  ) => Promise<CodeRecordSource[]>;
   scrollContainer: HTMLElement;
   settle?: () => Promise<void>;
   signal?: AbortSignal;
@@ -58,12 +69,14 @@ export function findDocumentScrollContainer(
 export async function scanEntireDocument({
   editorRoot,
   onProgress,
+  resolveCodeSources,
   scrollContainer,
   settle = waitForVirtualizedContent,
   signal,
 }: ScanEntireDocumentOptions): Promise<RepairCandidate[]> {
   const originalScrollTop = scrollContainer.scrollTop;
   const candidates = new Map<string, RepairCandidate>();
+  const codeReferences = new Map<string, CodeBlockReference>();
   const maximumScrollTop = Math.max(
     0,
     scrollContainer.scrollHeight - scrollContainer.clientHeight,
@@ -71,6 +84,7 @@ export async function scanEntireDocument({
   const scrollStep = Math.max(240, scrollContainer.clientHeight * 0.5);
 
   try {
+    let reachedDocumentEnd = false;
     for (let step = 0; step < MAX_SCAN_STEPS; step += 1) {
       throwIfCancelled(signal);
       const targetScrollTop = Math.min(step * scrollStep, maximumScrollTop);
@@ -86,17 +100,45 @@ export async function scanEntireDocument({
           candidates.set(candidate.id, candidate);
         }
       }
+      for (const reference of scanLoadedCodeReferences(
+        editorRoot,
+        targetScrollTop,
+      )) {
+        if (!codeReferences.has(reference.recordId)) {
+          codeReferences.set(reference.recordId, reference);
+        }
+      }
 
       onProgress?.(
         maximumScrollTop === 0 ? 1 : targetScrollTop / maximumScrollTop,
       );
 
       if (targetScrollTop >= maximumScrollTop) {
-        return Array.from(candidates.values());
+        reachedDocumentEnd = true;
+        break;
       }
     }
 
-    throw new Error("文档过长，扫描未能在安全步数内完成");
+    if (!reachedDocumentEnd) {
+      throw new Error("文档过长，扫描未能在安全步数内完成");
+    }
+
+    if (resolveCodeSources && codeReferences.size > 0) {
+      throwIfCancelled(signal);
+      for (const { recordId } of codeReferences.values()) {
+        candidates.delete(`mermaid:${recordId}`);
+      }
+      const resolved = await resolveCodeSources(Array.from(codeReferences.keys()));
+      throwIfCancelled(signal);
+      for (const { recordId, source } of resolved) {
+        const reference = codeReferences.get(recordId);
+        if (!reference) continue;
+        const candidate = createMermaidCandidate(reference, source);
+        if (candidate) candidates.set(candidate.id, candidate);
+      }
+    }
+
+    return Array.from(candidates.values());
   } finally {
     scrollContainer.scrollTop = originalScrollTop;
   }

@@ -4,6 +4,7 @@ import {
   planDiagramInsertions,
 } from "./lark/insertion-plan";
 import { createBoldTextEdit } from "./lark/text-format";
+import { readCodeRecordSource } from "./lark/record-text";
 
 const REQUEST_EVENT = "lark-markdown-repair:main-request";
 const RESPONSE_EVENT = "lark-markdown-repair:main-response";
@@ -20,6 +21,7 @@ interface LarkRecord {
   id: string;
   snapshot?: {
     author?: string;
+    [key: string]: unknown;
     type?: string;
   };
 }
@@ -72,7 +74,11 @@ interface CreatedDiagram {
 }
 
 interface BridgeRequest {
-  command: "bold-text-records" | "create-diagrams" | "delete-records";
+  command:
+    | "bold-text-records"
+    | "create-diagrams"
+    | "delete-records"
+    | "read-code-records";
   id: string;
   records?: Array<{ recordId: string; textLength: number }>;
   recordIds?: string[];
@@ -203,6 +209,31 @@ function validateRecordIds(value: unknown): string[] {
     throw new Error("待删除记录数据无效");
   }
   return recordIds;
+}
+
+function validateCodeRecordIds(value: unknown): string[] {
+  const recordIds = validateRecordIds(value);
+  if (recordIds.length === 0 || recordIds.length > MAX_BATCH_SIZE) {
+    throw new Error("待读取代码块数据无效");
+  }
+  return recordIds;
+}
+
+function readCodeRecords(
+  recordIdsValue: unknown,
+): Array<{ recordId: string; source: string }> {
+  const recordIds = validateCodeRecordIds(recordIdsValue);
+  const blockManager = requireBlockManager();
+  return recordIds.map((recordId) => {
+    const record = blockManager.getRecord(recordId);
+    if (!record?.snapshot) {
+      throw new Error(`找不到代码块记录：${recordId}`);
+    }
+    return {
+      recordId,
+      source: readCodeRecordSource(record.snapshot),
+    };
+  });
 }
 
 function validateBoldTextEdits(value: unknown): ReturnType<typeof createBoldTextEdit>[] {
@@ -343,7 +374,8 @@ function parseRequest(detail: unknown): BridgeRequest | null {
       typeof value.id !== "string" ||
       (value.command !== "bold-text-records" &&
         value.command !== "create-diagrams" &&
-        value.command !== "delete-records")
+        value.command !== "delete-records" &&
+        value.command !== "read-code-records")
     ) {
       return null;
     }
@@ -368,11 +400,21 @@ if (!window[INSTALL_FLAG]) {
     }
     void (async () => {
       try {
-        const result = request.command === "bold-text-records"
-          ? await boldTextRecords(request.records)
-          : request.command === "create-diagrams"
-            ? await createDiagrams(request.targets)
-            : await deleteRecords(request.recordIds);
+        let result: unknown;
+        switch (request.command) {
+          case "bold-text-records":
+            result = await boldTextRecords(request.records);
+            break;
+          case "create-diagrams":
+            result = await createDiagrams(request.targets);
+            break;
+          case "delete-records":
+            result = await deleteRecords(request.recordIds);
+            break;
+          case "read-code-records":
+            result = readCodeRecords(request.recordIds);
+            break;
+        }
         respond({ id: request.id, result });
       } catch (error: unknown) {
         respond({

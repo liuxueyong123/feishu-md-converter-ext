@@ -87,4 +87,45 @@ describe("scanEntireDocument", () => {
     ).rejects.toThrow("扫描已停止");
     expect(scrollContainer.scrollTop).toBe(275);
   });
+
+  it("uses the full Lark record when a long code block DOM is virtualized", async () => {
+    const scrollContainer = document.createElement("div");
+    const editorRoot = document.createElement("main");
+    scrollContainer.append(editorRoot);
+    document.body.append(scrollContainer);
+    defineScrollMetrics(scrollContainer, {
+      clientHeight: 500,
+      scrollHeight: 500,
+    });
+    editorRoot.innerHTML = `
+      <div data-block-type="code" data-block-id="12" data-record-id="long-code">
+        <div class="code-block-zone-container">
+          <div class="ace-line">participant S as Controller</div>
+          <div class="ace-line">S-->>C: middle fragment only</div>
+        </div>
+      </div>`;
+    const resolveCodeSources = vi.fn(async () => [
+      {
+        recordId: "long-code",
+        source: "%%{init: {\"theme\":\"base\"}}%%\nsequenceDiagram\nC->>S: complete source",
+      },
+    ]);
+
+    const candidates = await scanEntireDocument({
+      editorRoot,
+      resolveCodeSources,
+      scrollContainer,
+      settle: async () => undefined,
+    });
+
+    expect(resolveCodeSources).toHaveBeenCalledWith(["long-code"]);
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: "mermaid:long-code",
+        signature: "init",
+        source:
+          "%%{init: {\"theme\":\"base\"}}%%\nsequenceDiagram\nC->>S: complete source",
+      }),
+    ]);
+  });
 });

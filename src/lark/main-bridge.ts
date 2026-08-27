@@ -18,7 +18,11 @@ function createRequestId(): string {
 }
 
 export function callMainWorld<T>(
-  command: "bold-text-records" | "create-diagrams" | "delete-records",
+  command:
+    | "bold-text-records"
+    | "create-diagrams"
+    | "delete-records"
+    | "read-code-records",
   payload: Record<string, unknown>,
   timeoutMs = 15_000,
 ): Promise<T> {

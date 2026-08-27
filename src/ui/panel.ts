@@ -7,6 +7,7 @@ interface PanelCopy {
   close: string;
   empty: string;
   mermaid: string;
+  navigate: string;
   repair: string;
   rescan: string;
   scanning: string;
@@ -21,6 +22,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     close: "Close",
     empty: "No table headers or Mermaid blocks need repair.",
     mermaid: "Mermaid drawing",
+    navigate: "Go to this block",
     repair: "Repair selected",
     rescan: "Scan again",
     scanning: "Scanning the entire document…",
@@ -33,6 +35,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     close: "关闭",
     empty: "没有发现需要修复的表头或 Mermaid 代码块。",
     mermaid: "Mermaid 文本绘图",
+    navigate: "定位到此区块",
     repair: "修复选中项",
     rescan: "重新扫描",
     scanning: "正在扫描整篇文档…",
@@ -88,13 +91,16 @@ const PANEL_STYLES = `
   .progress-track { height: 4px; margin: 10px 2px 0; overflow: hidden; border-radius: 99px; background: #eef0f4; }
   .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4f46e5, #818cf8); transition: width .18s ease; }
   .list { display: grid; gap: 8px; margin-top: 12px; }
-  .candidate { position: relative; display: grid; grid-template-columns: 20px 1fr; gap: 9px; padding: 11px; border: 1px solid var(--border); border-radius: 11px; background: white; cursor: pointer; }
+  .candidate { position: relative; display: grid; grid-template-columns: 20px 1fr; gap: 9px; padding: 11px; border: 1px solid var(--border); border-radius: 11px; background: white; }
   .candidate:hover { border-color: #c7d2fe; background: #fcfcff; }
+  .selection { cursor: pointer; }
   .candidate input { position: absolute; opacity: 0; pointer-events: none; }
   .checkmark { display: grid; place-items: center; width: 17px; height: 17px; margin-top: 1px; border: 1.5px solid #98a2b3; border-radius: 5px; color: transparent; font-size: 11px; }
   .candidate input:checked + .checkmark { border-color: var(--accent); background: var(--accent); color: white; }
   .candidate-title { color: #344054; font-weight: 650; }
   .candidate-content { min-width: 0; }
+  .candidate-link { width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+  .candidate-link:disabled { cursor: not-allowed; }
   .candidate-title, .candidate-preview { display: block; }
   .candidate-preview { margin-top: 2px; overflow: hidden; color: #667085; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
   .empty { padding: 24px 10px; color: #667085; text-align: center; }
@@ -118,6 +124,7 @@ export interface RepairPanel {
 interface CreatePanelOptions {
   onCancel: () => void;
   onClose: () => void;
+  onNavigate: (candidate: RepairCandidate) => void;
   onRepair: () => void;
   onRescan: () => void;
   root: HTMLElement;
@@ -126,6 +133,7 @@ interface CreatePanelOptions {
 export function createRepairPanel({
   onCancel,
   onClose,
+  onNavigate,
   onRepair,
   onRescan,
   root,
@@ -209,12 +217,15 @@ export function createRepairPanel({
     list.replaceChildren();
     for (const candidate of candidates) {
       selectedIds.add(candidate.id);
-      const label = document.createElement("label");
-      label.className = "candidate";
-      label.dataset.candidateId = candidate.id;
+      const card = document.createElement("div");
+      card.className = "candidate";
+      card.dataset.candidateId = candidate.id;
+      const selection = document.createElement("label");
+      selection.className = "selection";
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = true;
+      input.setAttribute("aria-label", candidate.kind === "table" ? copy.table : copy.mermaid);
       input.addEventListener("change", () => {
         if (input.checked) selectedIds.add(candidate.id);
         else selectedIds.delete(candidate.id);
@@ -223,8 +234,12 @@ export function createRepairPanel({
       const checkmark = document.createElement("span");
       checkmark.className = "checkmark";
       checkmark.textContent = "✓";
-      const content = document.createElement("span");
-      content.className = "candidate-content";
+      selection.append(input, checkmark);
+      const content = document.createElement("button");
+      content.className = "candidate-content candidate-link";
+      content.type = "button";
+      content.setAttribute("aria-label", copy.navigate);
+      content.onclick = () => onNavigate(candidate);
       const candidateTitle = document.createElement("span");
       candidateTitle.className = "candidate-title";
       candidateTitle.textContent =
@@ -236,8 +251,8 @@ export function createRepairPanel({
           ? candidate.headerPreview
           : candidate.preview;
       content.append(candidateTitle, preview);
-      label.append(input, checkmark, content);
-      list.append(label);
+      card.append(selection, content);
+      list.append(card);
     }
     if (candidates.length === 0) {
       const empty = document.createElement("div");
@@ -270,6 +285,11 @@ export function createRepairPanel({
       primary.disabled = busy || (candidates.length > 0 && selectedIds.size === 0);
       for (const input of list.querySelectorAll<HTMLInputElement>("input")) {
         input.disabled = busy;
+      }
+      for (const button of list.querySelectorAll<HTMLButtonElement>(
+        ".candidate-link",
+      )) {
+        button.disabled = busy;
       }
     },
     setProgress(progress: number): void {

@@ -102,9 +102,10 @@ function validateDiagramFrame(channels: string[]): FrameValidation | null {
     return null;
   }
   const text = document.body.innerText;
-  const error = /(?:syntax|parse|lexical)\s+error|语法错误|解析错误/iu.test(
-    text,
-  );
+  const error =
+    /(?:syntax|parse|lexical)\s+error|no diagram type detected|error parsing mermaid|语法错误|解析错误/iu.test(
+      text,
+    );
   const editor = document.querySelector<HTMLElement>(
     ".content-editable[contenteditable]",
   );

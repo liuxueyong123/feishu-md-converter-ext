@@ -8,10 +8,12 @@ import {
   requestDiagramFrameAccess,
 } from "./lark/diagram-repair";
 import {
+  type CodeRecordSource,
   findDocumentScrollContainer,
   findLarkEditorRoot,
   scanEntireDocument,
 } from "./lark/document-scanner";
+import { callMainWorld } from "./lark/main-bridge";
 import { repairTableHeader } from "./lark/table-repair";
 import { createRepairPanel, type RepairPanel } from "./ui/panel";
 
@@ -26,6 +28,8 @@ const COPY = {
         : `Repaired ${succeeded} item(s); ${failed} item(s) need manual review.`,
     editorMissing: "Lark editor not found. Confirm that you can edit this document.",
     failed: (message: string) => `Repair failed: ${message}`,
+    locateFailed: "The block could not be mounted. Scan the document again.",
+    located: "Moved to the selected block.",
     repairingTables: (current: number, total: number) =>
       `Bolding table headers (${current}/${total})…`,
     scanDone: (count: number) => `Found ${count} item(s) to review.`,
@@ -39,6 +43,8 @@ const COPY = {
         : `已修复 ${succeeded} 项，另有 ${failed} 项需要手动检查。`,
     editorMissing: "未找到 Lark 编辑器，请确认你有编辑权限并已进入编辑模式。",
     failed: (message: string) => `修复失败：${message}`,
+    locateFailed: "未能加载对应区块，请重新扫描文档。",
+    located: "已定位到所选区块。",
     repairingTables: (current: number, total: number) =>
       `正在加粗表格标题行（${current}/${total}）…`,
     scanDone: (count: number) => `发现 ${count} 个待确认项目。`,
@@ -54,6 +60,20 @@ function wait(milliseconds: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+async function readFullCodeSources(
+  recordIds: string[],
+): Promise<CodeRecordSource[]> {
+  const sources: CodeRecordSource[] = [];
+  for (let index = 0; index < recordIds.length; index += 100) {
+    sources.push(
+      ...await callMainWorld<CodeRecordSource[]>("read-code-records", {
+        recordIds: recordIds.slice(index, index + 100),
+      }),
+    );
+  }
+  return sources;
 }
 
 function findEditButton(): HTMLElement | null {
@@ -127,6 +147,7 @@ function startExtension(): void {
       const candidates = await scanEntireDocument({
         editorRoot,
         onProgress: (progress) => panel.setProgress(progress),
+        resolveCodeSources: readFullCodeSources,
         scrollContainer,
         signal: controller.signal,
       });
@@ -239,12 +260,52 @@ function startExtension(): void {
     }
   };
 
+  const navigateToCandidate = async (
+    candidate: RepairCandidate,
+  ): Promise<void> => {
+    try {
+      const { scrollContainer } = await ensureEditor(copy);
+      const positions = [
+        candidate.scrollTop,
+        candidate.scrollTop - scrollContainer.clientHeight / 2,
+        candidate.scrollTop + scrollContainer.clientHeight / 2,
+      ];
+      let block: HTMLElement | null = null;
+      for (const position of positions) {
+        scrollContainer.scrollTop = Math.max(0, position);
+        await wait(120);
+        block = document.querySelector<HTMLElement>(
+          `[data-record-id="${CSS.escape(candidate.recordId)}"]`,
+        );
+        if (block) break;
+      }
+      if (!block) {
+        panel.setStatus(copy.locateFailed, "warning");
+        return;
+      }
+      block.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        block.animate(
+          [
+            { boxShadow: "0 0 0 3px rgba(79, 70, 229, .55)" },
+            { boxShadow: "0 0 0 0 rgba(79, 70, 229, 0)" },
+          ],
+          { duration: 1_100, easing: "ease-out" },
+        );
+      }
+      panel.setStatus(copy.located, "success");
+    } catch (error: unknown) {
+      panel.setStatus(copy.failed(errorMessage(error)), "error");
+    }
+  };
+
   panel = createRepairPanel({
     onCancel: stop,
     onClose: () => {
       activeController?.abort();
       panel.destroy();
     },
+    onNavigate: (candidate) => void navigateToCandidate(candidate),
     onRepair: () => void repair(),
     onRescan: () => void scan(),
     root,
