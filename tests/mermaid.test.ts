@@ -22,7 +22,6 @@ describe("normalizeMermaidSource", () => {
     );
   });
 });
-
 describe("detectMermaidSource", () => {
   it("accepts a Mermaid init directive as sufficient evidence", () => {
     const result = detectMermaidSource(
@@ -87,4 +86,3 @@ describe("detectMermaidSource", () => {
     expect(detectMermaidSource("%% just a comment").isMermaid).toBe(false);
   });
 });
-

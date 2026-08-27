@@ -53,4 +53,3 @@ export function detectMermaidSource(source: string): MermaidDetection {
 
   return { isMermaid: false, normalizedSource, signature: null };
 }
-
