@@ -88,4 +88,3 @@ describe("scanEntireDocument", () => {
     expect(scrollContainer.scrollTop).toBe(275);
   });
 });
-

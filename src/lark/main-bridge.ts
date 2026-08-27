@@ -1,0 +1,66 @@
+const REQUEST_EVENT = "lark-markdown-repair:main-request";
+const RESPONSE_EVENT = "lark-markdown-repair:main-response";
+
+interface BridgeResponse<T> {
+  error?: string;
+  id: string;
+  result?: T;
+}
+
+export interface CreatedDiagram {
+  diagramRecordId: string;
+  sourceRecordId: string;
+  trailingTextRecordId: string;
+}
+
+function createRequestId(): string {
+  return `${Date.now()}-${crypto.randomUUID()}`;
+}
+
+export function callMainWorld<T>(
+  command: "bold-text-records" | "create-diagrams" | "delete-records",
+  payload: Record<string, unknown>,
+  timeoutMs = 15_000,
+): Promise<T> {
+  const id = createRequestId();
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("等待 Lark 编辑器响应超时"));
+    }, timeoutMs);
+
+    const cleanup = (): void => {
+      window.clearTimeout(timeout);
+      document.removeEventListener(RESPONSE_EVENT, handleResponse);
+    };
+
+    const handleResponse = (event: Event): void => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (typeof detail !== "string") {
+        return;
+      }
+      let response: BridgeResponse<T>;
+      try {
+        response = JSON.parse(detail) as BridgeResponse<T>;
+      } catch {
+        return;
+      }
+      if (response.id !== id) {
+        return;
+      }
+      cleanup();
+      if (response.error) {
+        reject(new Error(response.error));
+      } else {
+        resolve(response.result as T);
+      }
+    };
+
+    document.addEventListener(RESPONSE_EVENT, handleResponse);
+    document.dispatchEvent(
+      new CustomEvent(REQUEST_EVENT, {
+        detail: JSON.stringify({ command, id, ...payload }),
+      }),
+    );
+  });
+}

@@ -79,7 +79,13 @@ function readTableCandidate(
 }
 
 function readCodeSource(block: Element): string {
-  const codeLines = Array.from(block.querySelectorAll(".ace-line"));
+  const codeZone = block.querySelector(".code-block-zone-container");
+  const codeLines = Array.from(
+    (codeZone ?? block).querySelectorAll(".ace-line"),
+  ).filter(
+    (line) =>
+      !line.closest(".code-block-caption, .caption-editor, .code-toolbar"),
+  );
   if (codeLines.length > 0) {
     return codeLines.map((line) => line.textContent ?? "").join("\n");
   }
@@ -130,4 +136,3 @@ export function scanLoadedCandidates(
     },
   );
 }
-

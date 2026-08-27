@@ -68,7 +68,7 @@ export async function scanEntireDocument({
     0,
     scrollContainer.scrollHeight - scrollContainer.clientHeight,
   );
-  const scrollStep = Math.max(320, scrollContainer.clientHeight);
+  const scrollStep = Math.max(240, scrollContainer.clientHeight * 0.5);
 
   try {
     for (let step = 0; step < MAX_SCAN_STEPS; step += 1) {
@@ -101,4 +101,3 @@ export async function scanEntireDocument({
     scrollContainer.scrollTop = originalScrollTop;
   }
 }
-

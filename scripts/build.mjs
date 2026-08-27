@@ -32,7 +32,15 @@ await Promise.all([
     sourcemap: true,
     target: "chrome114",
   }),
+  build({
+    bundle: true,
+    entryPoints: [join(projectRoot, "src/main-world.ts")],
+    format: "iife",
+    outfile: join(outputDirectory, "main-world.js"),
+    platform: "browser",
+    sourcemap: true,
+    target: "chrome114",
+  }),
 ]);
 
 await cp(join(projectRoot, "manifest.json"), join(outputDirectory, "manifest.json"));
-

@@ -32,6 +32,7 @@ describe("scanLoadedCandidates", () => {
     document.body.innerHTML = `
       <div data-block-type="code" data-block-id="65" data-record-id="code-record">
         <div class="code-toolbar">代码块 Plain Text 自动换行 复制</div>
+        <div class="code-block-caption"><div class="ace-line">代码块</div></div>
         <div class="code-block-zone-container">
           <div class="ace-line">\u200B%%{init: {"theme":"base"}}%%\u200B</div>
           <div class="ace-line">flowchart LR</div>
@@ -80,4 +81,3 @@ describe("scanLoadedCandidates", () => {
     ]);
   });
 });
-
