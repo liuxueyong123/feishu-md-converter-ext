@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Lark Markdown Repair",
+  "version": "0.1.0",
+  "description": "修复 Lark 导入 Markdown 后的表头与 Mermaid 图表。",
+  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "修复当前 Lark 文档"
+  }
+}
+
