@@ -314,13 +314,12 @@ function startExtension(): void {
     onNavigate: (candidate) => void navigateToCandidate(candidate),
     onRepair: () => void repair(),
     onRescan: () => void scan(),
+    onStart: () => void scan(),
     root,
   });
   root.addEventListener("lark-markdown-repair:open", () => {
     root.style.display = "block";
-    void scan();
   });
-  void scan();
 }
 
 startExtension();

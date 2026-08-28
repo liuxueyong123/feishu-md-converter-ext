@@ -5,11 +5,13 @@ type Tone = "default" | "error" | "success" | "warning";
 interface PanelCopy {
   cancel: string;
   close: string;
+  completed: string;
   empty: string;
   mermaid: string;
   navigate: string;
   repair: string;
   rescan: string;
+  start: string;
   scanning: string;
   subtitle: string;
   table: string;
@@ -20,11 +22,13 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   en: {
     cancel: "Stop",
     close: "Close",
+    completed: "Done",
     empty: "No table headers or Mermaid blocks need repair.",
     mermaid: "Mermaid drawing",
     navigate: "Go to this block",
     repair: "Repair selected",
     rescan: "Scan again",
+    start: "Start scan",
     scanning: "Scanning the entire document…",
     subtitle: "Review first, then repair the imported Markdown in place.",
     table: "Bold table header",
@@ -33,11 +37,13 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   zh: {
     cancel: "停止",
     close: "关闭",
+    completed: "完成",
     empty: "没有发现需要修复的表头或 Mermaid 代码块。",
     mermaid: "Mermaid 文本绘图",
     navigate: "定位到此区块",
     repair: "修复选中项",
     rescan: "重新扫描",
+    start: "开始扫描",
     scanning: "正在扫描整篇文档…",
     subtitle: "先预览，再原地修复导入的 Markdown。",
     table: "表格标题行加粗",
@@ -116,6 +122,7 @@ export interface RepairPanel {
   destroy(): void;
   renderCandidates(candidates: RepairCandidate[]): void;
   selectedCandidates(): RepairCandidate[];
+  setCompleted(): void;
   setBusy(busy: boolean): void;
   setProgress(progress: number): void;
   setStatus(message: string, tone?: Tone): void;
@@ -127,6 +134,7 @@ interface CreatePanelOptions {
   onNavigate: (candidate: RepairCandidate) => void;
   onRepair: () => void;
   onRescan: () => void;
+  onStart: () => void;
   root: HTMLElement;
 }
 
@@ -136,6 +144,7 @@ export function createRepairPanel({
   onNavigate,
   onRepair,
   onRescan,
+  onStart,
   root,
 }: CreatePanelOptions): RepairPanel {
   const copy = COPY[navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en"];
@@ -172,14 +181,14 @@ export function createRepairPanel({
   body.className = "body";
   const status = document.createElement("div");
   status.className = "status";
-  status.dataset.busy = "true";
+  status.dataset.busy = "false";
   status.dataset.tone = "default";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   const dot = document.createElement("span");
   dot.className = "dot";
   const statusText = document.createElement("span");
-  statusText.textContent = copy.scanning;
+  statusText.textContent = copy.start;
   status.append(dot, statusText);
   const progressTrack = document.createElement("div");
   progressTrack.className = "progress-track";
@@ -195,23 +204,27 @@ export function createRepairPanel({
   const secondary = document.createElement("button");
   secondary.className = "action";
   secondary.type = "button";
-  secondary.textContent = copy.cancel;
-  secondary.onclick = onCancel;
+  secondary.textContent = copy.close;
+  secondary.onclick = onClose;
   const primary = document.createElement("button");
   primary.className = "action primary";
   primary.type = "button";
-  primary.textContent = copy.repair;
-  primary.disabled = true;
-  primary.onclick = onRepair;
+  primary.textContent = copy.start;
+  primary.disabled = false;
+  primary.onclick = onStart;
   footer.append(secondary, primary);
   panel.append(header, body, footer);
   shadow.append(panel);
 
   let candidates: RepairCandidate[] = [];
   const selectedIds = new Set<string>();
-  let busy = true;
+  let busy = false;
+  let hasScanned = false;
+  let completed = false;
 
   function renderCandidates(nextCandidates: RepairCandidate[]): void {
+    hasScanned = true;
+    completed = false;
     candidates = nextCandidates;
     selectedIds.clear();
     list.replaceChildren();
@@ -277,12 +290,28 @@ export function createRepairPanel({
     selectedCandidates(): RepairCandidate[] {
       return candidates.filter(({ id }) => selectedIds.has(id));
     },
+    setCompleted(): void {
+      completed = true;
+      primary.textContent = copy.completed;
+      primary.disabled = true;
+      primary.onclick = () => undefined;
+    },
     setBusy(nextBusy: boolean): void {
       busy = nextBusy;
       status.dataset.busy = String(busy);
-      secondary.textContent = busy ? copy.cancel : copy.rescan;
-      secondary.onclick = busy ? onCancel : onRescan;
-      primary.disabled = busy || (candidates.length > 0 && selectedIds.size === 0);
+      secondary.textContent = busy
+        ? copy.cancel
+        : hasScanned
+          ? copy.rescan
+          : copy.close;
+      secondary.onclick = busy || hasScanned
+        ? busy
+          ? onCancel
+          : onRescan
+        : onClose;
+      if (!completed) {
+        primary.disabled = busy || (candidates.length > 0 && selectedIds.size === 0);
+      }
       for (const input of list.querySelectorAll<HTMLInputElement>("input")) {
         input.disabled = busy;
       }
