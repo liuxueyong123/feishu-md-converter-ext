@@ -251,6 +251,9 @@ function startExtension(): void {
         copy.done(succeeded, failed),
         failed === 0 ? "success" : "warning",
       );
+      if (failed === 0) {
+        panel.setCompleted();
+      }
     } catch (error: unknown) {
       panel.renderCandidates([]);
       panel.setStatus(
