@@ -5,7 +5,6 @@ type Tone = "default" | "error" | "success" | "warning";
 interface PanelCopy {
   cancel: string;
   close: string;
-  completed: string;
   empty: string;
   mermaid: string;
   navigate: string;
@@ -22,7 +21,6 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   en: {
     cancel: "Stop",
     close: "Close",
-    completed: "Done",
     empty: "No table headers or Mermaid blocks need repair.",
     mermaid: "Mermaid drawing",
     navigate: "Go to this block",
@@ -37,7 +35,6 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   zh: {
     cancel: "停止",
     close: "关闭",
-    completed: "完成",
     empty: "没有发现需要修复的表头或 Mermaid 代码块。",
     mermaid: "Mermaid 文本绘图",
     navigate: "定位到此区块",
@@ -225,6 +222,7 @@ export function createRepairPanel({
   function renderCandidates(nextCandidates: RepairCandidate[]): void {
     hasScanned = true;
     completed = false;
+    primary.hidden = false;
     candidates = nextCandidates;
     selectedIds.clear();
     list.replaceChildren();
@@ -292,8 +290,7 @@ export function createRepairPanel({
     },
     setCompleted(): void {
       completed = true;
-      primary.textContent = copy.completed;
-      primary.disabled = true;
+      primary.hidden = true;
       primary.onclick = () => undefined;
     },
     setBusy(nextBusy: boolean): void {

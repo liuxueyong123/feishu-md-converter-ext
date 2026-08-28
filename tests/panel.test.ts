@@ -86,7 +86,7 @@ describe("createRepairPanel", () => {
     expect(panel.selectedCandidates()).toEqual([candidate]);
   });
 
-  it("shows a completed primary action after a successful repair", () => {
+  it("hides the completed action and keeps rescan available", () => {
     const root = document.createElement("div");
     document.body.append(root);
     const onRescan = vi.fn();
@@ -107,9 +107,13 @@ describe("createRepairPanel", () => {
     const primary = root.shadowRoot?.querySelector<HTMLButtonElement>(
       "button.primary",
     );
-    expect(["完成", "Done"]).toContain(primary?.textContent);
-    expect(primary?.disabled).toBe(true);
+    expect(primary?.hidden).toBe(true);
     primary?.click();
     expect(onRescan).not.toHaveBeenCalled();
+
+    root.shadowRoot
+      ?.querySelector<HTMLButtonElement>(".footer button:not(.primary)")
+      ?.click();
+    expect(onRescan).toHaveBeenCalledTimes(1);
   });
 });
