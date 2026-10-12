@@ -20,6 +20,7 @@ function createRequestId(): string {
 export function callMainWorld<T>(
   command:
     | "bold-text-records"
+    | "format-table-header"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records",

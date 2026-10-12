@@ -99,9 +99,13 @@ async function collectFrameChannels(
       scrollContainer.scrollHeight - scrollContainer.clientHeight,
     );
     const step = Math.max(320, scrollContainer.clientHeight);
-    for (let scrollTop = 0; scrollTop <= maximumScrollTop; scrollTop += step) {
+    for (
+      let scrollTop = 0;
+      ;
+      scrollTop = Math.min(scrollTop + step, maximumScrollTop)
+    ) {
       throwIfCancelled(signal);
-      scrollContainer.scrollTop = Math.min(scrollTop, maximumScrollTop);
+      scrollContainer.scrollTop = scrollTop;
       await wait(100);
       for (const recordId of Array.from(pending)) {
         const iframe = document.querySelector<HTMLIFrameElement>(
@@ -136,7 +140,7 @@ async function validateFrames(
 ): Promise<Map<string, FrameValidation>> {
   const validations = new Map<string, FrameValidation>();
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && validations.size < channels.length) {
+  while (Date.now() <= deadline && validations.size < channels.length) {
     throwIfCancelled(signal);
     const current = await sendRuntimeMessage<FrameValidation[]>({
       channels,
@@ -148,7 +152,9 @@ async function validateFrames(
       }
     }
     if (validations.size < channels.length) {
-      await wait(500);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await wait(Math.min(500, remainingMs));
     }
   }
   return validations;
@@ -181,14 +187,18 @@ async function locateDiagramElement(
       scrollContainer.scrollHeight - scrollContainer.clientHeight,
     );
     const step = Math.max(320, scrollContainer.clientHeight);
-    for (let scrollTop = 0; scrollTop <= maximumScrollTop; scrollTop += step) {
+    for (
+      let scrollTop = 0;
+      ;
+      scrollTop = Math.min(scrollTop + step, maximumScrollTop)
+    ) {
       throwIfCancelled(signal);
-      scrollContainer.scrollTop = Math.min(scrollTop, maximumScrollTop);
+      scrollContainer.scrollTop = scrollTop;
       await wait(100);
       element = document.querySelector<HTMLElement>(
         `[data-record-id="${CSS.escape(recordId)}"]`,
       );
-      if (element) break;
+      if (element || scrollTop >= maximumScrollTop) break;
     }
   }
   element?.scrollIntoView({ block: "center" });
@@ -200,6 +210,7 @@ async function writeAndValidateFocusedFrame(
   source: string,
   scrollContainer: HTMLElement,
   signal: AbortSignal | undefined,
+  writtenChannels: Set<string>,
 ): Promise<boolean> {
   const element = await locateDiagramElement(
     created.diagramRecordId,
@@ -208,20 +219,46 @@ async function writeAndValidateFocusedFrame(
   );
   if (!element) return false;
 
-  const deadline = Date.now() + 6_000;
-  while (Date.now() < deadline) {
-    throwIfCancelled(signal);
-    const iframe = element.querySelector<HTMLIFrameElement>("iframe[channel]");
-    const channel = iframe?.getAttribute("channel");
-    if (channel) {
-      const written = await writeFrames([{ channel, source }]);
-      if (written.has(channel)) {
-        await wait(350);
-        const validations = await validateFrames([channel], signal, 700);
-        if (validations.has(channel)) return true;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const sentChannels = attempt === 0
+      ? new Set(writtenChannels)
+      : new Set<string>();
+    const attemptedChannels = new Set(sentChannels);
+    let deadline = Date.now() + 6_000;
+    let renderWindowStarted = false;
+
+    while (Date.now() < deadline) {
+      throwIfCancelled(signal);
+      const currentElement = document.querySelector<HTMLElement>(
+        `[data-record-id="${CSS.escape(created.diagramRecordId)}"]`,
+      );
+      const iframe = currentElement?.querySelector<HTMLIFrameElement>("iframe[channel]");
+      const channel = iframe?.getAttribute("channel");
+      if (channel) {
+        if (!attemptedChannels.has(channel)) {
+          attemptedChannels.add(channel);
+          const written = await writeFrames([{ channel, source }]);
+          if (written.has(channel)) {
+            sentChannels.add(channel);
+            if (!renderWindowStarted) {
+              deadline = Date.now() + 6_000;
+              renderWindowStarted = true;
+            }
+            await wait(350);
+          }
+        }
+        if (sentChannels.has(channel)) {
+          renderWindowStarted = true;
+          const validations = await validateFrames(
+            [channel],
+            signal,
+            Math.min(700, deadline - Date.now()),
+          );
+          if (validations.has(channel)) return true;
+        }
       }
+      await wait(Math.min(300, Math.max(0, deadline - Date.now())));
     }
-    await wait(300);
   }
   return false;
 }
@@ -297,6 +334,7 @@ export async function repairDiagrams({
           candidate.source,
           scrollContainer,
           signal,
+          writtenChannels,
         )
       ) {
         succeededSourceIds.add(candidate.recordId);

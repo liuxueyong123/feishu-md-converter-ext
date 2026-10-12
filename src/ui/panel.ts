@@ -29,7 +29,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     start: "Start scan",
     scanning: "Scanning the entire document…",
     subtitle: "Review first, then repair the imported Markdown in place.",
-    table: "Bold table header",
+    table: "Bold and shade table header",
     title: "Markdown Repair",
   },
   zh: {
@@ -43,7 +43,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     start: "开始扫描",
     scanning: "正在扫描整篇文档…",
     subtitle: "先预览，再原地修复导入的 Markdown。",
-    table: "表格标题行加粗",
+    table: "表头加粗并添加底色",
     title: "Markdown 修复",
   },
 };

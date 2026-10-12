@@ -5,6 +5,10 @@ import {
 } from "./lark/insertion-plan";
 import { createBoldTextEdit } from "./lark/text-format";
 import { readCodeRecordSource } from "./lark/record-text";
+import {
+  createTableHeaderPlan,
+  TABLE_HEADER_BACKGROUND,
+} from "./lark/table-header";
 
 const REQUEST_EVENT = "lark-markdown-repair:main-request:v2";
 const RESPONSE_EVENT = "lark-markdown-repair:main-response:v2";
@@ -34,6 +38,7 @@ interface LarkBlockStruct {
 }
 
 interface LarkTransaction {
+  replace(recordId: string, path: readonly string[], value: unknown): void;
   createChildren(records: readonly unknown[], anchor: null): string[];
   insertChildren(
     parentRecordId: string,
@@ -76,10 +81,12 @@ interface CreatedDiagram {
 interface BridgeRequest {
   command:
     | "bold-text-records"
+    | "format-table-header"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records";
   id: string;
+  recordId?: string;
   records?: Array<{ recordId: string; textLength: number }>;
   recordIds?: string[];
   targets?: CreateTarget[];
@@ -272,6 +279,40 @@ async function boldTextRecords(recordsValue: unknown): Promise<string[]> {
   return edits.map(({ recordId }) => recordId);
 }
 
+async function formatTableHeader(recordIdValue: unknown): Promise<string[]> {
+  if (!isRecordId(recordIdValue)) throw new Error("表格记录 ID 无效");
+  const blockManager = requireBlockManager();
+  const plan = createTableHeaderPlan(
+    blockManager.getRecord(recordIdValue)?.snapshot,
+    (recordId) => blockManager.getRecord(recordId)?.snapshot,
+  );
+  await blockManager.applyTransaction(
+    "lark-markdown-repair:format-table-header",
+    (transaction) => {
+      for (const cellRecordId of plan.cellRecordIds) {
+        transaction.replace(
+          cellRecordId,
+          ["background_color"],
+          TABLE_HEADER_BACKGROUND,
+        );
+      }
+      for (const edit of plan.textEdits) {
+        transaction.edit(edit.recordId, ["text"], edit.changeset);
+      }
+    },
+    { source: "local-insert" },
+  );
+  for (const cellRecordId of plan.cellRecordIds) {
+    if (
+      blockManager.getRecord(cellRecordId)?.snapshot?.background_color !==
+      TABLE_HEADER_BACKGROUND
+    ) {
+      throw new Error("表头底色保存结果校验失败");
+    }
+  }
+  return plan.cellRecordIds;
+}
+
 async function createDiagrams(targetsValue: unknown): Promise<CreatedDiagram[]> {
   const targets = validateCreateTargets(targetsValue);
   const blockManager = requireBlockManager();
@@ -373,6 +414,7 @@ function parseRequest(detail: unknown): BridgeRequest | null {
       !isObject(value) ||
       typeof value.id !== "string" ||
       (value.command !== "bold-text-records" &&
+        value.command !== "format-table-header" &&
         value.command !== "create-diagrams" &&
         value.command !== "delete-records" &&
         value.command !== "read-code-records")
@@ -404,6 +446,9 @@ if (!window[INSTALL_FLAG]) {
         switch (request.command) {
           case "bold-text-records":
             result = await boldTextRecords(request.records);
+            break;
+          case "format-table-header":
+            result = await formatTableHeader(request.recordId);
             break;
           case "create-diagrams":
             result = await createDiagrams(request.targets);

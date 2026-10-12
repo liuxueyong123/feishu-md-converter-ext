@@ -13,6 +13,24 @@ function defineScrollMetrics(
 }
 
 describe("scanEntireDocument", () => {
+  it("continues scanning when lazy rendering increases the document height", async () => {
+    const scrollContainer = document.createElement("div");
+    const editorRoot = document.createElement("main");
+    scrollContainer.append(editorRoot);
+    defineScrollMetrics(scrollContainer, { clientHeight: 500, scrollHeight: 500 });
+    const candidates = await scanEntireDocument({
+      editorRoot,
+      scrollContainer,
+      settle: async () => {
+        defineScrollMetrics(scrollContainer, { clientHeight: 500, scrollHeight: 1_500 });
+        editorRoot.innerHTML = scrollContainer.scrollTop === 1_000
+          ? '<div data-block-type="table" data-record-id="last"><table><tr><td>Last</td></tr></table></div>'
+          : "";
+      },
+    });
+    expect(candidates.map(({ id }) => id)).toEqual(["table:last"]);
+  });
+
   it("collects virtualized candidates, deduplicates them, and restores position", async () => {
     const scrollContainer = document.createElement("div");
     const editorRoot = document.createElement("main");

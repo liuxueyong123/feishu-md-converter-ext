@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lark Markdown Repair",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "修复 Lark 导入 Markdown 后的表头与 Mermaid 图表。",
   "permissions": ["activeTab", "scripting"],
   "optional_host_permissions": ["https://*.larksuitepkg.com/*"],

@@ -32,7 +32,7 @@ const COPY = {
     locateFailed: "The block could not be mounted. Scan the document again.",
     located: "Moved to the selected block.",
     repairingTables: (current: number, total: number) =>
-      `Bolding table headers (${current}/${total})…`,
+      `Formatting table headers (${current}/${total})…`,
     scanDone: (count: number) => `Found ${count} item(s) to review.`,
     scanning: "Scanning the entire document…",
   },
@@ -47,7 +47,7 @@ const COPY = {
     locateFailed: "未能加载对应区块，请重新扫描文档。",
     located: "已定位到所选区块。",
     repairingTables: (current: number, total: number) =>
-      `正在加粗表格标题行（${current}/${total}）…`,
+      `正在加粗表头并设置底色（${current}/${total}）…`,
     scanDone: (count: number) => `发现 ${count} 个待确认项目。`,
     scanning: "正在扫描整篇文档…",
   },
@@ -219,7 +219,7 @@ function startExtension(): void {
         panel.setStatus(copy.repairingTables(index + 1, tables.length));
         panel.setProgress((index + 0.5) / selected.length);
         try {
-          await repairTableHeader(table, scrollContainer);
+          await repairTableHeader(table);
           succeeded += 1;
         } catch {
           failed += 1;

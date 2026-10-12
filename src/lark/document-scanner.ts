@@ -77,7 +77,7 @@ export async function scanEntireDocument({
   const originalScrollTop = scrollContainer.scrollTop;
   const candidates = new Map<string, RepairCandidate>();
   const codeReferences = new Map<string, CodeBlockReference>();
-  const maximumScrollTop = Math.max(
+  let maximumScrollTop = Math.max(
     0,
     scrollContainer.scrollHeight - scrollContainer.clientHeight,
   );
@@ -91,6 +91,10 @@ export async function scanEntireDocument({
       scrollContainer.scrollTop = targetScrollTop;
       await settle();
       throwIfCancelled(signal);
+      maximumScrollTop = Math.max(
+        0,
+        scrollContainer.scrollHeight - scrollContainer.clientHeight,
+      );
 
       for (const candidate of scanLoadedCandidates(
         editorRoot,
