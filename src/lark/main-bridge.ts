@@ -21,6 +21,8 @@ export function callMainWorld<T>(
   command:
     | "bold-text-records"
     | "format-table-header"
+    | "read-heading-spacing"
+    | "insert-heading-spacing"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records",

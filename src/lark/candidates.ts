@@ -7,7 +7,7 @@ interface CandidateBase {
   scrollTop: number;
 }
 
-export interface CodeBlockReference {
+export interface BlockReference {
   blockId: string | null;
   recordId: string;
   scrollTop: number;
@@ -25,7 +25,12 @@ export interface MermaidCandidate extends CandidateBase {
   source: string;
 }
 
-export type RepairCandidate = TableCandidate | MermaidCandidate;
+export interface HeadingCandidate extends CandidateBase {
+  kind: "heading";
+  preview: string;
+}
+
+export type RepairCandidate = TableCandidate | MermaidCandidate | HeadingCandidate;
 
 const LARK_BLOCK_SELECTOR =
   '[data-block-type="table"], [data-block-type="code"]';
@@ -102,7 +107,7 @@ function readCodeSource(block: Element): string {
 }
 
 export function createMermaidCandidate(
-  reference: CodeBlockReference,
+  reference: BlockReference,
   source: string,
 ): MermaidCandidate | null {
   const detection = detectMermaidSource(source);
@@ -136,10 +141,22 @@ function readMermaidCandidate(
 export function scanLoadedCodeReferences(
   root: ParentNode,
   scrollTop: number,
-): CodeBlockReference[] {
+): BlockReference[] {
   return Array.from(
     root.querySelectorAll('[data-block-type="code"][data-record-id]'),
   ).flatMap((block) => {
+    const identity = readStableBlockIdentity(block);
+    return identity ? [{ ...identity, scrollTop }] : [];
+  });
+}
+
+export function scanLoadedHeadingReferences(
+  root: ParentNode,
+  scrollTop: number,
+): BlockReference[] {
+  return Array.from(root.querySelectorAll(
+    '[data-block-type="heading1"], [data-block-type="heading2"], [data-block-type="heading3"]',
+  )).flatMap((block) => {
     const identity = readStableBlockIdentity(block);
     return identity ? [{ ...identity, scrollTop }] : [];
   });

@@ -1,14 +1,20 @@
 import {
-  type CodeBlockReference,
+  type BlockReference,
   type RepairCandidate,
   createMermaidCandidate,
   scanLoadedCandidates,
   scanLoadedCodeReferences,
+  scanLoadedHeadingReferences,
 } from "./candidates";
 
 export interface CodeRecordSource {
   recordId: string;
   source: string;
+}
+
+export interface HeadingSpacingRecord {
+  recordId: string;
+  preview: string;
 }
 
 interface ScanEntireDocumentOptions {
@@ -17,6 +23,7 @@ interface ScanEntireDocumentOptions {
   resolveCodeSources?: (
     recordIds: string[],
   ) => Promise<CodeRecordSource[]>;
+  resolveHeadingSpacing?: (recordIds: string[]) => Promise<HeadingSpacingRecord[]>;
   scrollContainer: HTMLElement;
   settle?: () => Promise<void>;
   signal?: AbortSignal;
@@ -70,13 +77,15 @@ export async function scanEntireDocument({
   editorRoot,
   onProgress,
   resolveCodeSources,
+  resolveHeadingSpacing,
   scrollContainer,
   settle = waitForVirtualizedContent,
   signal,
 }: ScanEntireDocumentOptions): Promise<RepairCandidate[]> {
   const originalScrollTop = scrollContainer.scrollTop;
   const candidates = new Map<string, RepairCandidate>();
-  const codeReferences = new Map<string, CodeBlockReference>();
+  const codeReferences = new Map<string, BlockReference>();
+  const headingReferences = new Map<string, BlockReference>();
   let maximumScrollTop = Math.max(
     0,
     scrollContainer.scrollHeight - scrollContainer.clientHeight,
@@ -112,6 +121,11 @@ export async function scanEntireDocument({
           codeReferences.set(reference.recordId, reference);
         }
       }
+      for (const reference of scanLoadedHeadingReferences(editorRoot, targetScrollTop)) {
+        if (!headingReferences.has(reference.recordId)) {
+          headingReferences.set(reference.recordId, reference);
+        }
+      }
 
       onProgress?.(
         maximumScrollTop === 0 ? 1 : targetScrollTop / maximumScrollTop,
@@ -139,6 +153,19 @@ export async function scanEntireDocument({
         if (!reference) continue;
         const candidate = createMermaidCandidate(reference, source);
         if (candidate) candidates.set(candidate.id, candidate);
+      }
+    }
+
+    if (resolveHeadingSpacing && headingReferences.size > 0) {
+      throwIfCancelled(signal);
+      const resolved = await resolveHeadingSpacing(Array.from(headingReferences.keys()));
+      throwIfCancelled(signal);
+      for (const { recordId, preview } of resolved) {
+        const reference = headingReferences.get(recordId);
+        if (!reference) continue;
+        candidates.set(`heading:${recordId}`, {
+          ...reference, id: `heading:${recordId}`, kind: "heading", preview,
+        });
       }
     }
 

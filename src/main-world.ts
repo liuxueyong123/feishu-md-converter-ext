@@ -5,6 +5,7 @@ import {
 } from "./lark/insertion-plan";
 import { createBoldTextEdit } from "./lark/text-format";
 import { readCodeRecordSource } from "./lark/record-text";
+import { needsHeadingSpacing } from "./lark/heading-spacing";
 import {
   createTableHeaderPlan,
   TABLE_HEADER_BACKGROUND,
@@ -82,6 +83,8 @@ interface BridgeRequest {
   command:
     | "bold-text-records"
     | "format-table-header"
+    | "read-heading-spacing"
+    | "insert-heading-spacing"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records";
@@ -313,6 +316,79 @@ async function formatTableHeader(recordIdValue: unknown): Promise<string[]> {
   return plan.cellRecordIds;
 }
 
+function resolveHeadingSpacing(
+  blockManager: LarkBlockManager,
+  recordId: string,
+): { parentRecordId: string; index: number; author: string; preview: string; needsBlank: boolean } {
+  const struct = blockManager.getBlockStructsByRecordId(recordId)[0];
+  const parent = struct?.parent;
+  const snapshot = blockManager.getRecord(recordId)?.snapshot;
+  if (!struct || !parent || !snapshot || !/^heading[123]$/u.test(snapshot.type ?? "")) {
+    throw new Error(`找不到 H1–H3 标题记录：${recordId}`);
+  }
+  const index = parent.children.findIndex((child) => child.id === struct.id);
+  if (index < 0) throw new Error(`无法定位标题顺序：${recordId}`);
+  const previous = index > 0
+    ? blockManager.getRecord(parent.children[index - 1].record.id)?.snapshot
+    : undefined;
+  const text = snapshot.text;
+  const attributed = isObject(text) ? text.initialAttributedTexts : null;
+  const zones = isObject(attributed) ? attributed.text : null;
+  return {
+    parentRecordId: parent.record.id,
+    index,
+    author: typeof snapshot.author === "string" ? snapshot.author : "",
+    preview: isObject(zones) && typeof zones["0"] === "string" ? zones["0"].slice(0, 120) : "",
+    needsBlank: needsHeadingSpacing(snapshot, previous, index),
+  };
+}
+
+function readHeadingSpacing(recordIdsValue: unknown): Array<{ recordId: string; preview: string }> {
+  const recordIds = validateRecordIds(recordIdsValue);
+  if (recordIds.length === 0 || recordIds.length > MAX_BATCH_SIZE) {
+    throw new Error("待读取标题数据无效");
+  }
+  const blockManager = requireBlockManager();
+  return recordIds.flatMap((recordId) => {
+    const heading = resolveHeadingSpacing(blockManager, recordId);
+    return heading.needsBlank ? [{ recordId, preview: heading.preview }] : [];
+  });
+}
+
+async function insertHeadingSpacing(recordIdValue: unknown): Promise<string | null> {
+  if (!isRecordId(recordIdValue)) throw new Error("标题记录 ID 无效");
+  const blockManager = requireBlockManager();
+  const heading = resolveHeadingSpacing(blockManager, recordIdValue);
+  if (!heading.needsBlank) return null;
+  let createdRecordId: string | null = null;
+  await blockManager.applyTransaction(
+    "lark-markdown-repair:insert-heading-spacing",
+    (transaction) => {
+      const currentHeading = resolveHeadingSpacing(blockManager, recordIdValue);
+      if (!currentHeading.needsBlank) return;
+      const recordIds = transaction.createChildren(
+        [createEmptyTextRecord(currentHeading.parentRecordId, currentHeading.author)],
+        null,
+      );
+      if (recordIds.length !== 1 || !recordIds[0]) {
+        throw new Error("Lark 未返回新建空段落的记录 ID");
+      }
+      createdRecordId = recordIds[0];
+      transaction.insertChildren(currentHeading.parentRecordId, currentHeading.index, recordIds);
+    },
+    { source: "local-insert" },
+  );
+  if (createdRecordId === null) return null;
+  const current = blockManager.getBlockStructsByRecordId(recordIdValue)[0];
+  const index = current?.parent?.children.findIndex((child) => child.id === current.id) ?? -1;
+  if (
+    index <= 0 ||
+    current?.parent?.children[index - 1].record.id !== createdRecordId ||
+    resolveHeadingSpacing(blockManager, recordIdValue).needsBlank
+  ) throw new Error("标题前空段落保存结果校验失败，请重新扫描文档");
+  return createdRecordId;
+}
+
 async function createDiagrams(targetsValue: unknown): Promise<CreatedDiagram[]> {
   const targets = validateCreateTargets(targetsValue);
   const blockManager = requireBlockManager();
@@ -415,6 +491,8 @@ function parseRequest(detail: unknown): BridgeRequest | null {
       typeof value.id !== "string" ||
       (value.command !== "bold-text-records" &&
         value.command !== "format-table-header" &&
+        value.command !== "read-heading-spacing" &&
+        value.command !== "insert-heading-spacing" &&
         value.command !== "create-diagrams" &&
         value.command !== "delete-records" &&
         value.command !== "read-code-records")
@@ -449,6 +527,12 @@ if (!window[INSTALL_FLAG]) {
             break;
           case "format-table-header":
             result = await formatTableHeader(request.recordId);
+            break;
+          case "read-heading-spacing":
+            result = readHeadingSpacing(request.recordIds);
+            break;
+          case "insert-heading-spacing":
+            result = await insertHeadingSpacing(request.recordId);
             break;
           case "create-diagrams":
             result = await createDiagrams(request.targets);

@@ -13,6 +13,33 @@ function defineScrollMetrics(
 }
 
 describe("scanEntireDocument", () => {
+  it("resolves virtualized headings from native predecessors and keeps their scroll positions", async () => {
+    const scrollContainer = document.createElement("div");
+    const editorRoot = document.createElement("main");
+    scrollContainer.append(editorRoot);
+    defineScrollMetrics(scrollContainer, { clientHeight: 500, scrollHeight: 1_500 });
+    scrollContainer.scrollTop = 125;
+    const resolveHeadingSpacing = vi.fn(async () => [
+      { recordId: "last-heading", preview: "完整标题" },
+    ]);
+    const candidates = await scanEntireDocument({
+      editorRoot,
+      scrollContainer,
+      resolveHeadingSpacing,
+      settle: async () => {
+        editorRoot.innerHTML = scrollContainer.scrollTop < 500
+          ? '<div data-block-type="heading1" data-record-id="first-heading">开头标题</div>'
+          : '<div data-block-type="heading3" data-block-id="9" data-record-id="last-heading">标题 DOM 片段</div>';
+      },
+    });
+    expect(resolveHeadingSpacing).toHaveBeenCalledWith(["first-heading", "last-heading"]);
+    expect(candidates).toEqual([{
+      blockId: "9", id: "heading:last-heading", kind: "heading",
+      preview: "完整标题", recordId: "last-heading", scrollTop: 500,
+    }]);
+    expect(scrollContainer.scrollTop).toBe(125);
+  });
+
   it("continues scanning when lazy rendering increases the document height", async () => {
     const scrollContainer = document.createElement("div");
     const editorRoot = document.createElement("main");

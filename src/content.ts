@@ -1,4 +1,5 @@
 import type {
+  HeadingCandidate,
   MermaidCandidate,
   RepairCandidate,
   TableCandidate,
@@ -9,6 +10,7 @@ import {
 } from "./lark/diagram-repair";
 import {
   type CodeRecordSource,
+  type HeadingSpacingRecord,
   findDocumentScrollContainer,
   findLarkEditorRoot,
   scanEntireDocument,
@@ -31,6 +33,8 @@ const COPY = {
     failed: (message: string) => `Repair failed: ${message}`,
     locateFailed: "The block could not be mounted. Scan the document again.",
     located: "Moved to the selected block.",
+    repairingHeadings: (current: number, total: number) =>
+      `Adding blank lines before headings (${current}/${total})…`,
     repairingTables: (current: number, total: number) =>
       `Formatting table headers (${current}/${total})…`,
     scanDone: (count: number) => `Found ${count} item(s) to review.`,
@@ -46,6 +50,8 @@ const COPY = {
     failed: (message: string) => `修复失败：${message}`,
     locateFailed: "未能加载对应区块，请重新扫描文档。",
     located: "已定位到所选区块。",
+    repairingHeadings: (current: number, total: number) =>
+      `正在为标题补空行（${current}/${total}）…`,
     repairingTables: (current: number, total: number) =>
       `正在加粗表头并设置底色（${current}/${total}）…`,
     scanDone: (count: number) => `发现 ${count} 个待确认项目。`,
@@ -75,6 +81,16 @@ async function readFullCodeSources(
     );
   }
   return sources;
+}
+
+async function readHeadingSpacing(recordIds: string[]): Promise<HeadingSpacingRecord[]> {
+  const headings: HeadingSpacingRecord[] = [];
+  for (let index = 0; index < recordIds.length; index += 100) {
+    headings.push(...await callMainWorld<HeadingSpacingRecord[]>("read-heading-spacing", {
+      recordIds: recordIds.slice(index, index + 100),
+    }));
+  }
+  return headings;
 }
 
 function findEditButton(): HTMLElement | null {
@@ -154,6 +170,7 @@ function startExtension(): void {
         editorRoot,
         onProgress: (progress) => panel.setProgress(progress),
         resolveCodeSources: readFullCodeSources,
+        resolveHeadingSpacing: readHeadingSpacing,
         scrollContainer,
         signal: controller.signal,
       });
@@ -213,6 +230,9 @@ function startExtension(): void {
         (candidate): candidate is MermaidCandidate =>
           candidate.kind === "mermaid",
       );
+      const headings = selected.filter(
+        (candidate): candidate is HeadingCandidate => candidate.kind === "heading",
+      );
 
       for (const [index, table] of tables.entries()) {
         if (controller.signal.aborted) throw new Error(copy.cancelled);
@@ -227,6 +247,19 @@ function startExtension(): void {
         }
       }
 
+      for (const [index, heading] of headings.entries()) {
+        if (controller.signal.aborted) throw new Error(copy.cancelled);
+        panel.setStatus(copy.repairingHeadings(index + 1, headings.length));
+        panel.setProgress((tables.length + index + 0.5) / selected.length);
+        try {
+          await callMainWorld<string | null>("insert-heading-spacing", { recordId: heading.recordId });
+          succeeded += 1;
+        } catch {
+          failed += 1;
+          failedCandidates.push(heading);
+        }
+      }
+
       if (diagrams.length > 0) {
         const result = await repairDiagrams({
           candidates: diagrams,
@@ -234,7 +267,7 @@ function startExtension(): void {
           onProgress: (message, progress) => {
             panel.setStatus(message);
             panel.setProgress(
-              (tables.length + progress * diagrams.length) / selected.length,
+              (tables.length + headings.length + progress * diagrams.length) / selected.length,
             );
           },
           scrollContainer,

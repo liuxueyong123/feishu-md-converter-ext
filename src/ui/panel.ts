@@ -6,6 +6,7 @@ interface PanelCopy {
   cancel: string;
   close: string;
   empty: string;
+  heading: string;
   mermaid: string;
   navigate: string;
   repair: string;
@@ -21,7 +22,8 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   en: {
     cancel: "Stop",
     close: "Close",
-    empty: "No table headers or Mermaid blocks need repair.",
+    empty: "No table headers, Mermaid blocks, or heading spacing need repair.",
+    heading: "Add blank line before heading",
     mermaid: "Mermaid drawing",
     navigate: "Go to this block",
     repair: "Repair selected",
@@ -35,7 +37,8 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   zh: {
     cancel: "停止",
     close: "关闭",
-    empty: "没有发现需要修复的表头或 Mermaid 代码块。",
+    empty: "没有发现需要修复的表头、Mermaid 代码块或标题空行。",
+    heading: "标题前补空行",
     mermaid: "Mermaid 文本绘图",
     navigate: "定位到此区块",
     repair: "修复选中项",
@@ -227,6 +230,7 @@ export function createRepairPanel({
     selectedIds.clear();
     list.replaceChildren();
     for (const candidate of candidates) {
+      const label = copy[candidate.kind];
       selectedIds.add(candidate.id);
       const card = document.createElement("div");
       card.className = "candidate";
@@ -236,7 +240,7 @@ export function createRepairPanel({
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = true;
-      input.setAttribute("aria-label", candidate.kind === "table" ? copy.table : copy.mermaid);
+      input.setAttribute("aria-label", label);
       input.addEventListener("change", () => {
         if (input.checked) selectedIds.add(candidate.id);
         else selectedIds.delete(candidate.id);
@@ -253,8 +257,7 @@ export function createRepairPanel({
       content.onclick = () => onNavigate(candidate);
       const candidateTitle = document.createElement("span");
       candidateTitle.className = "candidate-title";
-      candidateTitle.textContent =
-        candidate.kind === "table" ? copy.table : copy.mermaid;
+      candidateTitle.textContent = label;
       const preview = document.createElement("span");
       preview.className = "candidate-preview";
       preview.textContent =

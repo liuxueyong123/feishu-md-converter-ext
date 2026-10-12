@@ -3,6 +3,34 @@ import { describe, expect, it, vi } from "vitest";
 import { createRepairPanel } from "../src/ui/panel";
 
 describe("createRepairPanel", () => {
+  it("previews heading spacing with its own label and supports choosing the repair", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const onRepair = vi.fn();
+    const panel = createRepairPanel({
+      onCancel: vi.fn(), onClose: vi.fn(), onNavigate: vi.fn(),
+      onRepair, onRescan: vi.fn(), onStart: vi.fn(), root,
+    });
+    const candidate = {
+      blockId: null, id: "heading:heading-1", kind: "heading" as const,
+      preview: "章节标题", recordId: "heading-1", scrollTop: 100,
+    };
+    panel.renderCandidates([candidate]);
+    expect(["标题前补空行", "Add blank line before heading"]).toContain(
+      root.shadowRoot?.querySelector(".candidate-title")?.textContent,
+    );
+    expect(root.shadowRoot?.querySelector(".candidate-preview")?.textContent).toBe("章节标题");
+    expect(panel.selectedCandidates()).toEqual([candidate]);
+    const input = root.shadowRoot?.querySelector<HTMLInputElement>("input");
+    input?.click();
+    expect(panel.selectedCandidates()).toEqual([]);
+    expect(root.shadowRoot?.querySelector<HTMLButtonElement>("button.primary")?.disabled).toBe(true);
+    input?.click();
+    root.shadowRoot?.querySelector<HTMLButtonElement>("button.primary")?.click();
+    expect(onRepair).toHaveBeenCalledOnce();
+    panel.destroy();
+  });
+
   it("waits for an explicit start action before scanning", () => {
     const root = document.createElement("div");
     document.body.append(root);
