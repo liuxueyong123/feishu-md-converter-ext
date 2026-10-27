@@ -68,10 +68,9 @@ async function rollbackCreatedDiagrams(
 ): Promise<void> {
   if (created.length === 0) return;
   await callMainWorld<string[]>("delete-records", {
-    recordIds: created.flatMap(({ diagramRecordId, trailingTextRecordId }) => [
-      diagramRecordId,
-      trailingTextRecordId,
-    ]),
+    recordIds: created.flatMap(({ diagramRecordId, trailingTextRecordId }) =>
+      trailingTextRecordId ? [diagramRecordId, trailingTextRecordId] : [diagramRecordId],
+    ),
   });
 }
 
@@ -358,7 +357,8 @@ export async function repairDiagrams({
           reason: channel ? "图表渲染或展示模式校验失败" : "组件加载超时",
         });
         if (item) {
-          rollbackRecords.push(item.diagramRecordId, item.trailingTextRecordId);
+          rollbackRecords.push(item.diagramRecordId);
+          if (item.trailingTextRecordId) rollbackRecords.push(item.trailingTextRecordId);
         }
       }
     }

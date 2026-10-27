@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from "vitest";
 
-import { callMainWorld } from "../src/lark/main-bridge";
+import { callMainWorld, type CreatedDiagram } from "../src/lark/main-bridge";
 
 interface TestRecord {
   id: string;
@@ -71,6 +71,13 @@ describe("native heading spacing transaction", () => {
             append(id, snapshot, index + offset);
           });
         },
+        removeChildren: (_parentId: string, ids: string[]) => {
+          root.children = root.children.filter(({ record }) => !ids.includes(record.id));
+          ids.forEach((id) => {
+            records.delete(id);
+            structs.delete(id);
+          });
+        },
       });
     });
     const manager = {
@@ -116,6 +123,93 @@ describe("native heading spacing transaction", () => {
     body.snapshot.text = { initialAttributedTexts: { text: { "0": "" } } };
     await expect(callMainWorld("insert-heading-spacing", { recordId: "heading" })).resolves.toBeNull();
     expect(applyTransaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps one blank between a migrated diagram and a heading repaired first", async () => {
+    const { records, root } = mountManager();
+    const source = records.get("body")!;
+    source.snapshot = { type: "code", author: "author" };
+    const blankId = await callMainWorld<string>("insert-heading-spacing", { recordId: "heading" });
+    const [created] = await callMainWorld<CreatedDiagram[]>("create-diagrams", {
+      targets: [{ recordId: "body" }],
+    });
+    await callMainWorld("delete-records", { recordIds: ["body"] });
+
+    expect(root.children.map(({ record }) => record.id)).toEqual([
+      "first", created!.diagramRecordId, blankId, "heading", "subheading",
+    ]);
+    expect(created!.trailingTextRecordId).toBeNull();
+    await expect(callMainWorld("read-heading-spacing", { recordIds: ["heading"] })).resolves.toEqual([]);
+  });
+
+  it.each(["", " \n\t", "\u200B\u200C\u200D\u2060\uFEFF"])(
+    "reuses an existing empty paragraph %j after Mermaid without adding another",
+    async (text) => {
+      const { records, root } = mountManager();
+      records.get("body")!.snapshot = { type: "code" };
+      records.get("heading")!.snapshot = {
+        type: "text", children: [],
+        text: { initialAttributedTexts: { text: { "0": text } } },
+      };
+      const [created] = await callMainWorld<CreatedDiagram[]>("create-diagrams", {
+        targets: [{ recordId: "body" }],
+      });
+      expect(root.children.map(({ record }) => record.id)).toEqual([
+        "first", "body", created!.diagramRecordId, "heading", "subheading",
+      ]);
+      expect(created!.trailingTextRecordId).toBeNull();
+    },
+  );
+
+  it("adds one trailing blank when diagrams are repaired before headings", async () => {
+    const { records, root } = mountManager();
+    records.get("body")!.snapshot = { type: "code" };
+    const [created] = await callMainWorld<CreatedDiagram[]>("create-diagrams", {
+      targets: [{ recordId: "body" }],
+    });
+    await callMainWorld("delete-records", { recordIds: ["body"] });
+    await expect(callMainWorld("insert-heading-spacing", { recordId: "heading" })).resolves.toBeNull();
+    expect(root.children.map(({ record }) => record.id)).toEqual([
+      "first", created!.diagramRecordId, created!.trailingTextRecordId, "heading", "subheading",
+    ]);
+    expect(records.get(created!.trailingTextRecordId!)?.snapshot).toMatchObject({
+      type: "text", text: { initialAttributedTexts: { text: { "0": "" } } },
+    });
+  });
+
+  it.each([
+    { type: "text", text: { initialAttributedTexts: { text: { "0": "正文" } } } },
+    { type: "text", children: ["nested"], text: { initialAttributedTexts: { text: { "0": "" } } } },
+    { type: "text" },
+  ])("does not reuse a nonempty or unreadable following paragraph: %j", async (snapshot) => {
+    const { records, root } = mountManager();
+    records.get("body")!.snapshot = { type: "code" };
+    records.get("heading")!.snapshot = snapshot;
+    const [created] = await callMainWorld<CreatedDiagram[]>("create-diagrams", {
+      targets: [{ recordId: "body" }],
+    });
+    expect(created!.trailingTextRecordId).toEqual(expect.any(String));
+    expect(root.children.map(({ record }) => record.id)).toEqual([
+      "first", "body", created!.diagramRecordId, created!.trailingTextRecordId, "heading", "subheading",
+    ]);
+    expect(records.get("heading")!.snapshot).toEqual(snapshot);
+  });
+
+  it("reads the following paragraph inside the diagram creation transaction", async () => {
+    const { records, root, applyTransaction } = mountManager();
+    records.get("body")!.snapshot = { type: "code" };
+    const original = applyTransaction.getMockImplementation();
+    applyTransaction.mockImplementationOnce(async (name, operation) => {
+      await callMainWorld("insert-heading-spacing", { recordId: "heading" });
+      await original?.(name, operation);
+    });
+    const [created] = await callMainWorld<CreatedDiagram[]>("create-diagrams", {
+      targets: [{ recordId: "body" }],
+    });
+    expect(created!.trailingTextRecordId).toBeNull();
+    expect(root.children.map(({ record }) => record.snapshot.type)).toEqual([
+      "heading1", "code", "isv", "text", "heading2", "heading3",
+    ]);
   });
 
   it("rejects missing predecessors or invalid targets before creating records", async () => {

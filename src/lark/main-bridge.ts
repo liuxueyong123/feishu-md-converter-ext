@@ -10,7 +10,8 @@ interface BridgeResponse<T> {
 export interface CreatedDiagram {
   diagramRecordId: string;
   sourceRecordId: string;
-  trailingTextRecordId: string;
+  // Only records created by this migration may be removed during rollback.
+  trailingTextRecordId: string | null;
 }
 
 function createRequestId(): string {

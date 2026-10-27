@@ -4,6 +4,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function isEmptyTextParagraph(snapshot: unknown): boolean {
+  if (!isObject(snapshot) || snapshot.type !== "text") return false;
+  const text = snapshot.text;
+  const attributed = isObject(text) ? text.initialAttributedTexts : null;
+  const zones = isObject(attributed) ? attributed.text : null;
+  return isObject(zones) && typeof zones["0"] === "string" &&
+    zones["0"].replace(ZERO_WIDTH_CHARACTERS, "").trim().length === 0 &&
+    (!Array.isArray(snapshot.children) || snapshot.children.length === 0);
+}
+
 export function needsHeadingSpacing(
   snapshot: unknown,
   previousSnapshot: unknown,
@@ -28,6 +38,5 @@ export function needsHeadingSpacing(
   if (!isObject(zones) || typeof zones["0"] !== "string") {
     throw new Error("标题前的段落文本结构无效，请重新扫描文档");
   }
-  return zones["0"].replace(ZERO_WIDTH_CHARACTERS, "").trim().length > 0 ||
-    (Array.isArray(previousSnapshot.children) && previousSnapshot.children.length > 0);
+  return !isEmptyTextParagraph(previousSnapshot);
 }

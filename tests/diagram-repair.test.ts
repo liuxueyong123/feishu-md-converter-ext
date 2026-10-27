@@ -54,13 +54,13 @@ describe("repairDiagrams", () => {
     document.body.replaceChildren();
   });
 
-  it("rolls back every newly created record when frame writing fails", async () => {
+  it.each(["text-1", null])("rolls back only newly created records when frame writing fails (trailing: %j)", async (trailingTextRecordId) => {
     callMainWorldMock
       .mockResolvedValueOnce([
         {
           diagramRecordId: "diagram-1",
           sourceRecordId: "source-1",
-          trailingTextRecordId: "text-1",
+          trailingTextRecordId,
         },
       ])
       .mockResolvedValueOnce(["diagram-1", "text-1"]);
@@ -82,7 +82,7 @@ describe("repairDiagrams", () => {
 
     await rejection;
     expect(callMainWorldMock).toHaveBeenLastCalledWith("delete-records", {
-      recordIds: ["diagram-1", "text-1"],
+      recordIds: trailingTextRecordId ? ["diagram-1", "text-1"] : ["diagram-1"],
     });
   });
 
@@ -337,12 +337,12 @@ describe("repairDiagrams", () => {
     expect(callMainWorldMock).toHaveBeenLastCalledWith("delete-records", { recordIds: ["source-1"] });
   });
 
-  it("keeps the source and rolls back the diagram after both render windows fail", async () => {
+  it.each(["text-1", null])("keeps the source and rolls back only new records after both render windows fail (trailing: %j)", async (trailingTextRecordId) => {
     callMainWorldMock.mockResolvedValueOnce([
       {
         diagramRecordId: "diagram-1",
         sourceRecordId: "source-1",
-        trailingTextRecordId: "text-1",
+        trailingTextRecordId,
       },
     ]).mockResolvedValueOnce(["diagram-1", "text-1"]);
     let writeAttempts = 0;
@@ -370,6 +370,8 @@ describe("repairDiagrams", () => {
     });
     expect(writeAttempts).toBe(2);
     expect(callMainWorldMock).toHaveBeenCalledTimes(2);
-    expect(callMainWorldMock).toHaveBeenLastCalledWith("delete-records", { recordIds: ["diagram-1", "text-1"] });
+    expect(callMainWorldMock).toHaveBeenLastCalledWith("delete-records", {
+      recordIds: trailingTextRecordId ? ["diagram-1", "text-1"] : ["diagram-1"],
+    });
   });
 });

@@ -5,7 +5,7 @@ import {
 } from "./lark/insertion-plan";
 import { createBoldTextEdit } from "./lark/text-format";
 import { readCodeRecordSource } from "./lark/record-text";
-import { needsHeadingSpacing } from "./lark/heading-spacing";
+import { isEmptyTextParagraph, needsHeadingSpacing } from "./lark/heading-spacing";
 import {
   createTableHeaderPlan,
   TABLE_HEADER_BACKGROUND,
@@ -76,7 +76,7 @@ interface CreateTarget {
 interface CreatedDiagram {
   diagramRecordId: string;
   sourceRecordId: string;
-  trailingTextRecordId: string;
+  trailingTextRecordId: string | null;
 }
 
 interface BridgeRequest {
@@ -418,22 +418,32 @@ async function createDiagrams(targetsValue: unknown): Promise<CreatedDiagram[]> 
     "lark-markdown-repair:create-diagrams",
     (transaction) => {
       for (const insertion of planned) {
+        const struct = blockManager.getBlockStructsByRecordId(insertion.sourceRecordId)[0];
+        const parent = struct?.parent;
+        const sourceIndex = parent?.children.findIndex((child) => child.id === struct?.id) ?? -1;
+        if (!parent || sourceIndex < 0 || parent.record.id !== insertion.parentRecordId) {
+          throw new Error(`Mermaid 源块位置已变化，请重新扫描文档：${insertion.sourceRecordId}`);
+        }
+        const next = parent.children[sourceIndex + 1];
+        const needsTrailingText = !isEmptyTextParagraph(
+          next ? blockManager.getRecord(next.record.id)?.snapshot : undefined,
+        );
         const author =
           blockManager.getRecord(insertion.sourceRecordId)?.snapshot?.author ?? "";
         const recordIds = transaction.createChildren(
           [
             createDiagramRecord(insertion.parentRecordId, author),
-            createEmptyTextRecord(insertion.parentRecordId, author),
+            ...(needsTrailingText ? [createEmptyTextRecord(insertion.parentRecordId, author)] : []),
           ],
           null,
         );
-        const [diagramRecordId, trailingTextRecordId] = recordIds;
-        if (!diagramRecordId || !trailingTextRecordId) {
+        const [diagramRecordId, trailingTextRecordId = null] = recordIds;
+        if (recordIds.length !== (needsTrailingText ? 2 : 1) || !diagramRecordId || (needsTrailingText && !trailingTextRecordId)) {
           throw new Error("Lark 未返回新建文本绘图的记录 ID");
         }
         transaction.insertChildren(
           insertion.parentRecordId,
-          insertion.insertionIndex,
+          sourceIndex + 1,
           recordIds,
         );
         created.push({
