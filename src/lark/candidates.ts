@@ -30,10 +30,16 @@ export interface HeadingCandidate extends CandidateBase {
   preview: string;
 }
 
-export type RepairCandidate = TableCandidate | MermaidCandidate | HeadingCandidate;
+export interface SheetCandidate extends CandidateBase {
+  kind: "sheet";
+  preview: string;
+  unsupportedReason?: string;
+}
+
+export type RepairCandidate = TableCandidate | MermaidCandidate | HeadingCandidate | SheetCandidate;
 
 const LARK_BLOCK_SELECTOR =
-  '[data-block-type="table"], [data-block-type="code"]';
+  '[data-block-type="table"], [data-block-type="code"], [data-block-type="sheet"]';
 const ZERO_WIDTH_CHARACTERS = /[\u200B\u200C\u200D\u2060\uFEFF]/gu;
 
 function readStableBlockIdentity(block: Element): {
@@ -166,9 +172,13 @@ export function scanLoadedCandidates(
   root: ParentNode,
   scrollTop: number,
 ): RepairCandidate[] {
-  return Array.from(root.querySelectorAll(LARK_BLOCK_SELECTOR)).flatMap(
+  return Array.from(root.querySelectorAll(LARK_BLOCK_SELECTOR)).flatMap<RepairCandidate>(
     (block) => {
       const blockType = block.getAttribute("data-block-type");
+      if (blockType === "sheet") {
+        const identity = readStableBlockIdentity(block);
+        return identity ? [{ ...identity, scrollTop, id: `sheet:${identity.recordId}`, kind: "sheet" as const, preview: "", unsupportedReason: "电子表格尚未读取，请重新扫描" }] : [];
+      }
       const candidate =
         blockType === "table"
           ? readTableCandidate(block, scrollTop)

@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { scanLoadedCandidates } from "../src/lark/candidates";
 
 describe("scanLoadedCandidates", () => {
+  it("discovers embedded sheets without reading text from their canvas", () => {
+    document.body.innerHTML = '<div data-block-type="sheet" data-record-id="sheet-1"><canvas></canvas></div>';
+    expect(scanLoadedCandidates(document, 480)).toEqual([expect.objectContaining({
+      id: "sheet:sheet-1", recordId: "sheet-1", kind: "sheet", scrollTop: 480,
+    })]);
+  });
   it("extracts a Lark table header preview and stable record id", () => {
     document.body.innerHTML = `
       <div data-block-type="table" data-block-id="66" data-record-id="table-record">

@@ -24,6 +24,8 @@ export function callMainWorld<T>(
     | "format-table-header"
     | "read-heading-spacing"
     | "insert-heading-spacing"
+    | "read-sheet-tables"
+    | "convert-sheet-table"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records",

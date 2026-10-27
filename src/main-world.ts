@@ -6,6 +6,8 @@ import {
 import { createBoldTextEdit } from "./lark/text-format";
 import { readCodeRecordSource } from "./lark/record-text";
 import { isEmptyTextParagraph, needsHeadingSpacing } from "./lark/heading-spacing";
+import { convertSheetToTable } from "./lark/sheet-conversion";
+import { readEmbeddedSheet } from "./lark/sheet-source";
 import {
   createTableHeaderPlan,
   TABLE_HEADER_BACKGROUND,
@@ -85,6 +87,8 @@ interface BridgeRequest {
     | "format-table-header"
     | "read-heading-spacing"
     | "insert-heading-spacing"
+    | "read-sheet-tables"
+    | "convert-sheet-table"
     | "create-diagrams"
     | "delete-records"
     | "read-code-records";
@@ -355,6 +359,26 @@ function readHeadingSpacing(recordIdsValue: unknown): Array<{ recordId: string; 
   });
 }
 
+function readSheetTables(recordIdsValue: unknown): Array<{ recordId: string; preview: string; unsupportedReason?: string }> {
+  const recordIds = validateCodeRecordIds(recordIdsValue);
+  const manager = requireBlockManager();
+  return recordIds.map((recordId) => {
+    try {
+      const data = readEmbeddedSheet(manager, recordId);
+      return { recordId, preview: `${data.cells.length} × ${data.columnWidths.length} · ${data.cells[0]!.join(" | ").replace(/\s+/gu, " ").slice(0, 120)}` };
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : "电子表格读取失败，请重新扫描";
+      return { recordId, preview: reason, unsupportedReason: reason };
+    }
+  });
+}
+
+async function convertSheet(recordIdValue: unknown): Promise<string> {
+  if (!isRecordId(recordIdValue)) throw new Error("电子表格记录 ID 无效");
+  const manager = requireBlockManager();
+  return convertSheetToTable(manager, recordIdValue, () => readEmbeddedSheet(manager, recordIdValue));
+}
+
 async function insertHeadingSpacing(recordIdValue: unknown): Promise<string | null> {
   if (!isRecordId(recordIdValue)) throw new Error("标题记录 ID 无效");
   const blockManager = requireBlockManager();
@@ -503,6 +527,8 @@ function parseRequest(detail: unknown): BridgeRequest | null {
         value.command !== "format-table-header" &&
         value.command !== "read-heading-spacing" &&
         value.command !== "insert-heading-spacing" &&
+        value.command !== "read-sheet-tables" &&
+        value.command !== "convert-sheet-table" &&
         value.command !== "create-diagrams" &&
         value.command !== "delete-records" &&
         value.command !== "read-code-records")
@@ -543,6 +569,12 @@ if (!window[INSTALL_FLAG]) {
             break;
           case "insert-heading-spacing":
             result = await insertHeadingSpacing(request.recordId);
+            break;
+          case "read-sheet-tables":
+            result = readSheetTables(request.recordIds);
+            break;
+          case "convert-sheet-table":
+            result = await convertSheet(request.recordId);
             break;
           case "create-diagrams":
             result = await createDiagrams(request.targets);

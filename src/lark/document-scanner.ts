@@ -1,6 +1,7 @@
 import {
   type BlockReference,
   type RepairCandidate,
+  type SheetCandidate,
   createMermaidCandidate,
   scanLoadedCandidates,
   scanLoadedCodeReferences,
@@ -17,6 +18,12 @@ export interface HeadingSpacingRecord {
   preview: string;
 }
 
+export interface SheetTablePreview {
+  recordId: string;
+  preview: string;
+  unsupportedReason?: string;
+}
+
 interface ScanEntireDocumentOptions {
   editorRoot: ParentNode;
   onProgress?: (progress: number) => void;
@@ -24,6 +31,7 @@ interface ScanEntireDocumentOptions {
     recordIds: string[],
   ) => Promise<CodeRecordSource[]>;
   resolveHeadingSpacing?: (recordIds: string[]) => Promise<HeadingSpacingRecord[]>;
+  resolveSheetTables?: (recordIds: string[]) => Promise<SheetTablePreview[]>;
   scrollContainer: HTMLElement;
   settle?: () => Promise<void>;
   signal?: AbortSignal;
@@ -78,6 +86,7 @@ export async function scanEntireDocument({
   onProgress,
   resolveCodeSources,
   resolveHeadingSpacing,
+  resolveSheetTables,
   scrollContainer,
   settle = waitForVirtualizedContent,
   signal,
@@ -105,12 +114,24 @@ export async function scanEntireDocument({
         scrollContainer.scrollHeight - scrollContainer.clientHeight,
       );
 
-      for (const candidate of scanLoadedCandidates(
+      const loadedCandidates = scanLoadedCandidates(
         editorRoot,
         targetScrollTop,
-      )) {
+      );
+      for (const candidate of loadedCandidates) {
         if (!candidates.has(candidate.id)) {
           candidates.set(candidate.id, candidate);
+        }
+      }
+      const loadedSheets = loadedCandidates.filter((candidate): candidate is SheetCandidate => candidate.kind === "sheet");
+      if (resolveSheetTables && loadedSheets.length > 0) {
+        const previews = await resolveSheetTables(loadedSheets.map(({ recordId }) => recordId));
+        throwIfCancelled(signal);
+        for (const preview of previews) {
+          const reference = candidates.get(`sheet:${preview.recordId}`);
+          if (reference?.kind === "sheet") {
+            candidates.set(reference.id, { ...reference, unsupportedReason: undefined, ...preview });
+          }
         }
       }
       for (const reference of scanLoadedCodeReferences(

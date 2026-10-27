@@ -13,6 +13,24 @@ function defineScrollMetrics(
 }
 
 describe("scanEntireDocument", () => {
+  it("reads sheet previews while their virtualized blocks are mounted", async () => {
+    const scrollContainer = document.createElement("div");
+    const editorRoot = document.createElement("main");
+    defineScrollMetrics(scrollContainer, { clientHeight: 500, scrollHeight: 1_000 });
+    const candidates = await scanEntireDocument({
+      editorRoot, scrollContainer,
+      settle: async () => {
+        editorRoot.innerHTML = scrollContainer.scrollTop === 0
+          ? '<div data-block-type="sheet" data-record-id="sheet-1"></div>' : "";
+      },
+      resolveSheetTables: async (ids) => {
+        expect(editorRoot.querySelector('[data-record-id="sheet-1"]')).not.toBeNull();
+        expect(ids).toEqual(["sheet-1"]);
+        return [{ recordId: "sheet-1", preview: "7 × 3 · 标题 | 内容" }];
+      },
+    });
+    expect(candidates).toEqual([expect.objectContaining({ kind: "sheet", preview: "7 × 3 · 标题 | 内容" })]);
+  });
   it("resolves virtualized headings from native predecessors and keeps their scroll positions", async () => {
     const scrollContainer = document.createElement("div");
     const editorRoot = document.createElement("main");

@@ -2,6 +2,7 @@ import type {
   HeadingCandidate,
   MermaidCandidate,
   RepairCandidate,
+  SheetCandidate,
   TableCandidate,
 } from "./lark/candidates";
 import {
@@ -11,6 +12,7 @@ import {
 import {
   type CodeRecordSource,
   type HeadingSpacingRecord,
+  type SheetTablePreview,
   findDocumentScrollContainer,
   findLarkEditorRoot,
   scanEntireDocument,
@@ -24,7 +26,7 @@ const ROOT_SCHEMA_VERSION = "2";
 
 const COPY = {
   en: {
-    cancelled: "Stopped. The original content was preserved.",
+    cancelled: "Stopped. Completed repairs were kept.",
     done: (succeeded: number, failed: number) =>
       failed === 0
         ? `Repaired ${succeeded} item(s).`
@@ -35,13 +37,14 @@ const COPY = {
     located: "Moved to the selected block.",
     repairingHeadings: (current: number, total: number) =>
       `Adding blank lines before headings (${current}/${total})…`,
+    repairingSheets: (current: number, total: number) => `Converting sheets to document tables (${current}/${total})…`,
     repairingTables: (current: number, total: number) =>
       `Formatting table headers (${current}/${total})…`,
     scanDone: (count: number) => `Found ${count} item(s) to review.`,
     scanning: "Scanning the entire document…",
   },
   zh: {
-    cancelled: "已停止，原始内容已保留。",
+    cancelled: "已停止，已完成的修复会保留。",
     done: (succeeded: number, failed: number) =>
       failed === 0
         ? `已修复 ${succeeded} 项。`
@@ -52,6 +55,7 @@ const COPY = {
     located: "已定位到所选区块。",
     repairingHeadings: (current: number, total: number) =>
       `正在为标题补空行（${current}/${total}）…`,
+    repairingSheets: (current: number, total: number) => `正在将电子表格转为文档表格（${current}/${total}）…`,
     repairingTables: (current: number, total: number) =>
       `正在加粗表头并设置底色（${current}/${total}）…`,
     scanDone: (count: number) => `发现 ${count} 个待确认项目。`,
@@ -91,6 +95,16 @@ async function readHeadingSpacing(recordIds: string[]): Promise<HeadingSpacingRe
     }));
   }
   return headings;
+}
+
+async function readSheetTables(recordIds: string[]): Promise<SheetTablePreview[]> {
+  const previews: SheetTablePreview[] = [];
+  for (let index = 0; index < recordIds.length; index += 100) {
+    previews.push(...await callMainWorld<SheetTablePreview[]>("read-sheet-tables", {
+      recordIds: recordIds.slice(index, index + 100),
+    }));
+  }
+  return previews;
 }
 
 function findEditButton(): HTMLElement | null {
@@ -171,6 +185,7 @@ function startExtension(): void {
         onProgress: (progress) => panel.setProgress(progress),
         resolveCodeSources: readFullCodeSources,
         resolveHeadingSpacing: readHeadingSpacing,
+        resolveSheetTables: readSheetTables,
         scrollContainer,
         signal: controller.signal,
       });
@@ -233,6 +248,7 @@ function startExtension(): void {
       const headings = selected.filter(
         (candidate): candidate is HeadingCandidate => candidate.kind === "heading",
       );
+      const sheets = selected.filter((candidate): candidate is SheetCandidate => candidate.kind === "sheet");
 
       for (const [index, table] of tables.entries()) {
         if (controller.signal.aborted) throw new Error(copy.cancelled);
@@ -247,10 +263,23 @@ function startExtension(): void {
         }
       }
 
+      for (const [index, sheet] of sheets.entries()) {
+        if (controller.signal.aborted) throw new Error(copy.cancelled);
+        panel.setStatus(copy.repairingSheets(index + 1, sheets.length));
+        panel.setProgress((tables.length + index + 0.5) / selected.length);
+        try {
+          await callMainWorld<string>("convert-sheet-table", { recordId: sheet.recordId }, 60_000);
+          succeeded += 1;
+        } catch (error: unknown) {
+          failed += 1;
+          failedCandidates.push({ ...sheet, unsupportedReason: errorMessage(error) });
+        }
+      }
+
       for (const [index, heading] of headings.entries()) {
         if (controller.signal.aborted) throw new Error(copy.cancelled);
         panel.setStatus(copy.repairingHeadings(index + 1, headings.length));
-        panel.setProgress((tables.length + index + 0.5) / selected.length);
+        panel.setProgress((tables.length + sheets.length + index + 0.5) / selected.length);
         try {
           await callMainWorld<string | null>("insert-heading-spacing", { recordId: heading.recordId });
           succeeded += 1;
@@ -267,7 +296,7 @@ function startExtension(): void {
           onProgress: (message, progress) => {
             panel.setStatus(message);
             panel.setProgress(
-              (tables.length + headings.length + progress * diagrams.length) / selected.length,
+              (tables.length + sheets.length + headings.length + progress * diagrams.length) / selected.length,
             );
           },
           scrollContainer,

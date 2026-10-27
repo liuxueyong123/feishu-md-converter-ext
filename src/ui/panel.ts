@@ -13,6 +13,7 @@ interface PanelCopy {
   rescan: string;
   start: string;
   scanning: string;
+  sheet: string;
   subtitle: string;
   table: string;
   title: string;
@@ -22,7 +23,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   en: {
     cancel: "Stop",
     close: "Close",
-    empty: "No table headers, Mermaid blocks, or heading spacing need repair.",
+    empty: "No table headers, embedded sheets, Mermaid blocks, or heading spacing need repair.",
     heading: "Add blank line before heading",
     mermaid: "Mermaid drawing",
     navigate: "Go to this block",
@@ -30,6 +31,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     rescan: "Scan again",
     start: "Start scan",
     scanning: "Scanning the entire document…",
+    sheet: "Convert sheet to document table",
     subtitle: "Review first, then repair the imported Markdown in place.",
     table: "Bold and shade table header",
     title: "Markdown Repair",
@@ -37,7 +39,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
   zh: {
     cancel: "停止",
     close: "关闭",
-    empty: "没有发现需要修复的表头、Mermaid 代码块或标题空行。",
+    empty: "没有发现需要修复的表头、电子表格、Mermaid 代码块或标题空行。",
     heading: "标题前补空行",
     mermaid: "Mermaid 文本绘图",
     navigate: "定位到此区块",
@@ -45,6 +47,7 @@ const COPY: Record<"en" | "zh", PanelCopy> = {
     rescan: "重新扫描",
     start: "开始扫描",
     scanning: "正在扫描整篇文档…",
+    sheet: "电子表格转文档表格",
     subtitle: "先预览，再原地修复导入的 Markdown。",
     table: "表头加粗并添加底色",
     title: "Markdown 修复",
@@ -109,6 +112,7 @@ const PANEL_STYLES = `
   .candidate-link:disabled { cursor: not-allowed; }
   .candidate-title, .candidate-preview { display: block; }
   .candidate-preview { margin-top: 2px; overflow: hidden; color: #667085; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  .candidate-preview[data-warning="true"] { white-space: normal; color: #9a3412; }
   .empty { padding: 24px 10px; color: #667085; text-align: center; }
   .footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px 15px; border-top: 1px solid #f0f1f4; background: #fcfcfd; }
   button.action { min-height: 34px; padding: 7px 13px; border: 1px solid #d0d5dd; border-radius: 9px; background: white; color: #344054; cursor: pointer; font: inherit; font-weight: 620; }
@@ -231,7 +235,8 @@ export function createRepairPanel({
     list.replaceChildren();
     for (const candidate of candidates) {
       const label = copy[candidate.kind];
-      selectedIds.add(candidate.id);
+      const unsupportedReason = candidate.kind === "sheet" ? candidate.unsupportedReason : undefined;
+      if (!unsupportedReason) selectedIds.add(candidate.id);
       const card = document.createElement("div");
       card.className = "candidate";
       card.dataset.candidateId = candidate.id;
@@ -239,9 +244,12 @@ export function createRepairPanel({
       selection.className = "selection";
       const input = document.createElement("input");
       input.type = "checkbox";
-      input.checked = true;
+      input.checked = !unsupportedReason;
+      input.disabled = busy || Boolean(unsupportedReason);
+      input.dataset.unsupported = String(Boolean(unsupportedReason));
       input.setAttribute("aria-label", label);
       input.addEventListener("change", () => {
+        if (unsupportedReason) return;
         if (input.checked) selectedIds.add(candidate.id);
         else selectedIds.delete(candidate.id);
         primary.disabled = busy || selectedIds.size === 0;
@@ -264,6 +272,11 @@ export function createRepairPanel({
         candidate.kind === "table"
           ? candidate.headerPreview
           : candidate.preview;
+      if (unsupportedReason) {
+        preview.textContent = unsupportedReason;
+        preview.dataset.warning = "true";
+      }
+      preview.title = preview.textContent;
       content.append(candidateTitle, preview);
       card.append(selection, content);
       list.append(card);
@@ -279,7 +292,7 @@ export function createRepairPanel({
     } else {
       primary.textContent = copy.repair;
       primary.onclick = onRepair;
-      primary.disabled = busy;
+      primary.disabled = busy || selectedIds.size === 0;
     }
   }
 
@@ -313,7 +326,7 @@ export function createRepairPanel({
         primary.disabled = busy || (candidates.length > 0 && selectedIds.size === 0);
       }
       for (const input of list.querySelectorAll<HTMLInputElement>("input")) {
-        input.disabled = busy;
+        input.disabled = busy || input.dataset.unsupported === "true";
       }
       for (const button of list.querySelectorAll<HTMLButtonElement>(
         ".candidate-link",

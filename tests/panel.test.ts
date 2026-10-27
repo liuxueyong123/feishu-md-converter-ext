@@ -3,6 +3,25 @@ import { describe, expect, it, vi } from "vitest";
 import { createRepairPanel } from "../src/ui/panel";
 
 describe("createRepairPanel", () => {
+  it("allows selecting convertible sheets and keeps unsupported sheets disabled with reasons", () => {
+    const root = document.createElement("div");
+    const panel = createRepairPanel({
+      onCancel: vi.fn(), onClose: vi.fn(), onNavigate: vi.fn(),
+      onRepair: vi.fn(), onRescan: vi.fn(), onStart: vi.fn(), root,
+    });
+    const ready = { blockId: null, recordId: "ready", id: "sheet:ready", kind: "sheet" as const, preview: "7 × 3 · 标题", scrollTop: 0 };
+    const unsupported = { ...ready, id: "sheet:formula", recordId: "formula", unsupportedReason: "含公式，已保留原表" };
+    panel.renderCandidates([ready, unsupported]);
+    panel.setBusy(true);
+    panel.setBusy(false);
+    expect(panel.selectedCandidates()).toEqual([ready]);
+    const inputs = root.shadowRoot!.querySelectorAll<HTMLInputElement>("input");
+    expect(inputs[0]!.disabled).toBe(false);
+    expect(inputs[1]!.disabled).toBe(true);
+    expect(root.shadowRoot!.textContent).toContain("含公式，已保留原表");
+    panel.renderCandidates([unsupported]);
+    expect(root.shadowRoot!.querySelector<HTMLButtonElement>(".primary")!.disabled).toBe(true);
+  });
   it("previews heading spacing with its own label and supports choosing the repair", () => {
     const root = document.createElement("div");
     document.body.append(root);
